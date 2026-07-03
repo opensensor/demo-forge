@@ -105,3 +105,54 @@ export class ConfigError extends DemoForgeError {
     Object.setPrototypeOf(this, ConfigError.prototype);
   }
 }
+
+export interface LlmUnavailableErrorOptions {
+  baseUrl?: string;
+}
+
+export class LlmUnavailableError extends DemoForgeError {
+  override name = "LlmUnavailableError";
+  baseUrl?: string;
+
+  constructor(message: string, options?: LlmUnavailableErrorOptions) {
+    super(message);
+    this.baseUrl = options?.baseUrl;
+    Object.setPrototypeOf(this, LlmUnavailableError.prototype);
+  }
+}
+
+export interface LlmTimeoutErrorOptions {
+  timeout?: number;
+  url?: string;
+}
+
+export class LlmTimeoutError extends DemoForgeError {
+  override name = "LlmTimeoutError";
+  timeout?: number;
+  url?: string;
+
+  constructor(message: string, options?: LlmTimeoutErrorOptions) {
+    super(message);
+    this.timeout = options?.timeout;
+    this.url = options?.url;
+    Object.setPrototypeOf(this, LlmTimeoutError.prototype);
+  }
+}
+
+export interface LlmApiErrorOptions {
+  statusCode?: number;
+  responseBody?: string;
+}
+
+export class LlmApiError extends DemoForgeError {
+  override name = "LlmApiError";
+  statusCode?: number;
+  responseBody?: string;
+
+  constructor(message: string, options?: LlmApiErrorOptions) {
+    super(message);
+    this.statusCode = options?.statusCode;
+    this.responseBody = options?.responseBody;
+    Object.setPrototypeOf(this, LlmApiError.prototype);
+  }
+}
