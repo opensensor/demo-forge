@@ -99,3 +99,42 @@ export type {
   CalloutPosition,
   SmoothScrollOptions,
 } from './effects/types.js';
+
+// ─── Capture Pipeline ──────────────────────────────────────────────────────────
+
+export type {
+  OutputMetadata,
+  CaptureResult,
+  CaptureFailure,
+  CaptureResultUnion,
+  EncodingOptions,
+  Mp4EncodingOptions,
+  WebmEncodingOptions,
+  GifEncodingOptions,
+  WebpEncodingOptions,
+  QualityPreset,
+  QualityPresetConfig,
+  ProgressUpdate,
+  ProgressCallback,
+  CapturePipelineConfig,
+} from './capture/types.js';
+
+// ─── T16 Matrix ────────────────────────────────────────────────────────────────
+
+export {
+  RenderMatrix,
+  generateCellId,
+  computeMatrixCombinations,
+  generateOutputFilename,
+  calculateSSIM,
+} from './matrix/index.js';
+export type {
+  MatrixCellConfig,
+  MatrixConfig,
+  MatrixCellResult,
+  MatrixRenderResult,
+  CellDiff,
+  StepDiff,
+  DiffReport,
+  MatrixRenderOptions,
+} from './matrix/types.js';

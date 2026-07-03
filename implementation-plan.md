@@ -282,11 +282,24 @@ Wave 7 (Launch):
 ### T8_seed: Seed-data hook executor
 - **depends_on**: [T3]
 - **location**: `packages/core/src/seed/`
-- **description**: Seed-data hook execution framework. `runSeedHook(config) → Promise<void>`. Executes the user-configured seed command (e.g., `npx prisma db seed`, `python manage.py loaddata fixtures.json`). Timeout enforcement (configurable, default 30s). Output capture (stdout/stderr). Failure semantics: configurable — abort render, continue with warning, or retry. `--skip-seed` CLI flag for `demoforge render`. Integration with renderer lifecycle: seed hook runs before browser launch. Built-in seed helpers for common stacks (Next/Prisma, Django, Rails) as a future extension. Empty-state handling: proceed with warning by default, `--strict` mode fails if no seed hook configured and app has empty state.
+- **description**: Seed-data hook execution framework. `runSeedHook(config) → Promise<void>`. Executes the user-configured seed command (e.g. `npx prisma db seed`, `python manage.py loaddata fixtures.json`). Timeout enforcement (configurable, default 30s). Output capture (stdout/stderr). Failure semantics: configurable — abort render, continue with warning, or retry. `--skip-seed` CLI flag for `demoforge render`. Integration with renderer lifecycle: seed hook runs before browser launch. Built-in seed helpers for common stacks (Next/Prisma, Django, Rails) as a future extension. Empty-state handling: proceed with warning by default, `--strict` mode fails if no seed hook configured and app has empty state.
 - **validation**: Seed hook executes configured command. Timeout fires after configured duration with clear error. Stdout/stderr captured and logged on failure. `--skip-seed` flag bypasses seed execution. `--strict` mode fails when no seed hook configured. Hook failure produces actionable error message.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `packages/core/src/seed/seed.ts` with `runSeedHook(config, options)` function
+  - Created `packages/core/src/seed/seed.test.ts` with 25 comprehensive tests
+  - Added `SeedError` class to `packages/core/src/errors/index.ts` with command, exitCode, timeoutMs, stdout, stderr, attempts fields
+  - `runSeedHook` supports: skipSeed flag, strict mode, failureMode (abort/warn/retry), maxRetries
+  - Timeout enforcement with configurable duration (default 30s from config.seed.timeout)
+  - Stdout/stderr capture on both success and failure
+  - Retry with exponential backoff (500ms base, 2x multiplier)
+  - Actionable error messages with exit code, stderr details, and guidance
+  - All 25 tests passing (RED→GREEN)
+  - Full test suite: 790 tests passing
 - **files edited/created**: 
+  - packages/core/src/seed/seed.ts (new — 245 lines)
+  - packages/core/src/seed/seed.test.ts (new — 360 lines, 25 tests)
+  - packages/core/src/errors/index.ts (modified — added SeedError class and SeedErrorOptions interface)
 
 ### T9a_renderer: Renderer — script replay engine
 - **depends_on**: [T5_browser]
