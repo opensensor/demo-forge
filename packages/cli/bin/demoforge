@@ -2,37 +2,264 @@
 
 /**
  * DemoForge CLI entry point.
+ *
+ * Loads config once, creates logger, and wires all commands.
+ * Config injection pattern: config is loaded at CLI entry and passed
+ * down to command handlers — no global singletons.
  */
 
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
+import { loadConfig, createLogger, DemoForgeError, defaults } from "@demoforge/core";
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const __dist = join(__dirname, "..", "dist");
 const { version } = require(join(__dirname, "../package.json"));
+
+function resolveDist(module) {
+  return join(__dist, module);
+}
+
+// ---------------------------------------------------------------------------
+// Parse shared options manually (before Commander sets up commands)
+// ---------------------------------------------------------------------------
+
+const args = process.argv.slice(2);
+let verbose = false;
+let quiet = false;
+let configPath;
+let outputDir;
+const filteredArgs = ["node", "demoforge"];
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--verbose" || args[i] === "-v") {
+    verbose = true;
+  } else if (args[i] === "--quiet" || args[i] === "-q") {
+    quiet = true;
+  } else if (args[i] === "--config" && i + 1 < args.length) {
+    configPath = args[i + 1];
+    i++;
+  } else if (args[i] === "--output" && i + 1 < args.length) {
+    outputDir = args[i + 1];
+    i++;
+  } else {
+    filteredArgs.push(args[i]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create logger based on --verbose/--quiet
+// ---------------------------------------------------------------------------
+
+let logger;
+if (quiet) {
+  logger = createLogger({ level: "error" });
+} else if (verbose) {
+  logger = createLogger({ level: "debug" });
+} else {
+  logger = createLogger({ level: "info" });
+}
+
+// ---------------------------------------------------------------------------
+// Load config once at CLI entry
+// ---------------------------------------------------------------------------
+
+let config;
+try {
+  if (configPath) {
+    // Load from explicit path
+    const fs = await import("node:fs");
+    const yaml = await import("js-yaml");
+    const content = fs.readFileSync(configPath, "utf-8");
+    const raw = yaml.load(content);
+    // Use defaults and merge
+    const defaults = await import("@demoforge/core");
+    config = defaults.defaults();
+    if (raw && typeof raw === "object") {
+      const obj = raw;
+      if (typeof obj.demo === "string") config.demo = obj.demo.trim();
+      if (typeof obj.title === "string") config.title = obj.title;
+      if (obj.llm && typeof obj.llm === "object") {
+        const llm = obj.llm;
+        if (typeof llm.base_url === "string") config.llm.base_url = llm.base_url;
+        if (typeof llm.model === "string") config.llm.model = llm.model;
+        if (typeof llm.context_budget === "number" && llm.context_budget > 0) config.llm.context_budget = llm.context_budget;
+      }
+      if (obj.render && typeof obj.render === "object") {
+        const render = obj.render;
+        if (Array.isArray(render.viewports)) {
+          config.render.viewports = (render.viewports).map((v) => {
+            if (v && typeof v === "object") {
+              const vc = v;
+              return {
+                width: typeof vc.width === "number" ? vc.width : 1440,
+                height: typeof vc.height === "number" ? vc.height : 900,
+              };
+            }
+            return { width: 1440, height: 900 };
+          });
+        }
+        if (Array.isArray(render.themes)) {
+          const valid = render.themes.filter((t) => t === "light" || t === "dark");
+          if (valid.length > 0) config.render.themes = valid;
+        }
+        if (Array.isArray(render.locales)) {
+          const valid = render.locales.filter((l) => typeof l === "string" && l.trim() !== "");
+          if (valid.length > 0) config.render.locales = valid;
+        }
+      }
+      if (obj.seed && typeof obj.seed === "object") {
+        const seed = obj.seed;
+        if (typeof seed.timeout === "number" && seed.timeout > 0) config.seed.timeout = seed.timeout;
+      }
+      if (Array.isArray(obj.redaction)) {
+        config.redaction = obj.redaction.map((r) => {
+          if (r && typeof r === "object") {
+            const rule = r;
+            const pattern = typeof rule.pattern === "string" ? rule.pattern : "";
+            const label = typeof rule.label === "string" ? rule.label : "unknown";
+            if (pattern) return { pattern, label };
+          }
+          return { pattern: "", label: "unknown" };
+        }).filter((r) => r.pattern !== "");
+      }
+      if (obj.output && typeof obj.output === "object") {
+        const output = obj.output;
+        if (Array.isArray(output.formats)) {
+          const valid = output.formats.filter(
+            (f) => ["mp4", "webm", "gif", "webp"].includes(f),
+          );
+          if (valid.length > 0) config.output.formats = valid;
+        }
+      }
+      if (obj.narration && typeof obj.narration === "object") {
+        const narr = obj.narration;
+        if (typeof narr.mode === "string" && ["captions", "tts", "none"].includes(narr.mode)) {
+          config.narration.mode = narr.mode;
+        }
+      }
+    }
+  } else {
+    config = await loadConfig();
+  }
+} catch (err) {
+  if (err instanceof DemoForgeError) {
+    logger.error(`Config error: ${err.message}`);
+    process.exit(1);
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  logger.error(`Failed to load config: ${message}`);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Dynamically import command modules and build program
+// ---------------------------------------------------------------------------
 
 const program = new Command();
 
 program
   .name("demoforge")
   .description("LLM-driven web product demo automation framework")
-  .version(version);
+  .version(version)
+  .addHelpText("before", `DemoForge v${version}\n`);
+
+// Shared options attached to all commands
+program.configureHelp({
+  sortOptions: true,
+  sortSubcommands: true,
+});
+
+// ---------------------------------------------------------------------------
+// Register commands
+// ---------------------------------------------------------------------------
+
+// init
+try {
+  const { createInitCommand } = await import(resolveDist("commands/init.js"));
+  const initCmd = createInitCommand(logger);
+  if (outputDir) initCmd.option("-o, --output <dir>", `Output directory (default: ${outputDir})`);
+  program.addCommand(initCmd);
+} catch (err) {
+  logger.error("Failed to load init command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// explore
+try {
+  const { createExploreCommand } = await import(resolveDist("commands/explore.js"));
+  program.addCommand(createExploreCommand(logger, config));
+} catch (err) {
+  logger.error("Failed to load explore command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// render
+try {
+  const { createRenderCommand } = await import(resolveDist("commands/render.js"));
+  program.addCommand(createRenderCommand(logger, config));
+} catch (err) {
+  logger.error("Failed to load render command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// site
+try {
+  const { createSiteCommand } = await import(resolveDist("commands/site.js"));
+  program.addCommand(createSiteCommand(logger, config));
+} catch (err) {
+  logger.error("Failed to load site command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// doctor
+try {
+  const { createDoctorCommand } = await import(resolveDist("commands/doctor.js"));
+  program.addCommand(createDoctorCommand(logger));
+} catch (err) {
+  logger.error("Failed to load doctor command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// heal
+try {
+  const { createHealCommand } = await import(resolveDist("commands/heal.js"));
+  program.addCommand(createHealCommand(logger, config));
+} catch (err) {
+  logger.error("Failed to load heal command: " + (err instanceof Error ? err.message : String(err)));
+}
+
+// ---------------------------------------------------------------------------
+// Unknown command handling with suggestions
+// ---------------------------------------------------------------------------
+
+program.on("command:*", (invoked) => {
+  logger.error(`Unknown command: '${invoked}'`);
+  logger.info("Available commands:");
+  for (const sub of program.commands) {
+    logger.info(`  ${sub.name()}: ${sub.description()}`);
+  }
+  process.exit(1);
+});
 
 program.exitOverride();
 
 try {
-  program.parse(process.argv);
+  program.parse(filteredArgs);
 } catch (err) {
   if (err instanceof Error && "code" in err && err.code === "commander.helpDisplayed") {
     process.exit(0);
   }
-  throw err;
+  // Note: unknown commands are handled by the command:* event handler above
+  if (err instanceof DemoForgeError) {
+    logger.error(err.message);
+    process.exit(1);
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  logger.error(`Error: ${message}`);
+  process.exit(1);
 }
 
-if (!process.argv.slice(2).length) {
+if (!filteredArgs.length) {
   program.outputHelp();
   process.exit(0);
 }
