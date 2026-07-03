@@ -1,0 +1,37 @@
+{
+  "name": "multi-flow-demo",
+  "url": "http://localhost:3000",
+  "description": "Demo with multiple flows covering login, dashboard, and form",
+  "flows": [
+    {
+      "name": "login",
+      "description": "User logs in",
+      "steps": [
+        { "action": "goto", "url": "/login" },
+        { "action": "wait_for", "text": "Sign In" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "email" }, "value": "demo@example.com" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "password" }, "value": "demo1234" },
+        { "action": "click", "selector": { "role": "button", "name": "Sign In" } },
+        { "action": "wait_for", "text": "Dashboard" },
+        { "action": "done" }
+      ]
+    },
+    {
+      "name": "explore-dashboard",
+      "description": "Explore the dashboard after login",
+      "steps": [
+        { "action": "goto", "url": "/dashboard" },
+        { "action": "wait_for", "text": "Dashboard" },
+        { "action": "click", "selector": { "role": "link", "name": "Settings" } },
+        { "action": "wait_for", "text": "Settings" },
+        { "action": "screenshot", "label": "settings-page" },
+        { "action": "goto", "url": "/form" },
+        { "action": "wait_for", "text": "Contact Form" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "name" }, "value": "Demo User" },
+        { "action": "click", "selector": { "role": "button", "name": "Submit" } },
+        { "action": "wait_for", "text": "Thank you" },
+        { "action": "done" }
+      ]
+    }
+  ]
+}

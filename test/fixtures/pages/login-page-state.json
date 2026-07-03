@@ -1,0 +1,15 @@
+{
+  "name": "sample-page-state",
+  "description": "Expected accessibility tree state for the login page",
+  "page": "login.html",
+  "expected": {
+    "title": "Mock Web App — Login",
+    "url": "/login",
+    "elements": [
+      { "role": "heading", "name": "Sign In", "tag": "h1", "id": "page-title" },
+      { "role": "textbox", "name": "Email", "tag": "input", "id": "email", "type": "email" },
+      { "role": "textbox", "name": "Password", "tag": "input", "id": "password", "type": "password" },
+      { "role": "button", "name": "Sign In", "tag": "button", "id": "sign-in-btn" }
+    ]
+  }
+}

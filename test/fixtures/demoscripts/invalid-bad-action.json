@@ -1,0 +1,10 @@
+{
+  "name": "invalid-script-bad-action",
+  "url": "http://localhost:3000",
+  "flows": [
+    {
+      "name": "test",
+      "steps": [{ "action": "teleport" }]
+    }
+  ]
+}

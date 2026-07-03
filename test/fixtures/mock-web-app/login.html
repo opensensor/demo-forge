@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock Web App — Login</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+    h1 { margin-bottom: 1.5rem; text-align: center; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+    input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+    button { width: 100%; padding: 0.75rem; background: #0066cc; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+    button:hover { background: #0055aa; }
+    .nav { margin-top: 1rem; text-align: center; }
+    .nav a { color: #0066cc; text-decoration: none; margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="page-title">Sign In</h1>
+    <form id="login-form" action="/dashboard" method="get">
+      <div class="form-group"><label for="email">Email</label><input type="email" id="email" name="email" placeholder="you@example.com" required></div>
+      <div class="form-group"><label for="password">Password</label><input type="password" id="password" name="password" placeholder="Enter your password" required></div>
+      <button type="submit" id="sign-in-btn">Sign In</button>
+    </form>
+    <div class="nav"><a href="/form">Contact Form</a><a href="/dashboard">Dashboard</a></div>
+  </div>
+</body>
+</html>

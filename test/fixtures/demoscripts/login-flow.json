@@ -1,0 +1,22 @@
+{
+  "name": "login-flow",
+  "url": "http://localhost:3000",
+  "description": "Demo of user login flow",
+  "flows": [
+    {
+      "name": "login-success",
+      "description": "Successful login with valid credentials",
+      "steps": [
+        { "action": "goto", "url": "/login" },
+        { "action": "wait_for", "text": "Sign In" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "email" }, "value": "user@example.com" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "password" }, "value": "password123" },
+        { "action": "click", "selector": { "role": "button", "name": "Sign In" } },
+        { "action": "wait_for", "text": "Dashboard" },
+        { "action": "narrate", "text": "The user signs in with their credentials and lands on the dashboard." },
+        { "action": "screenshot", "label": "logged-in-dashboard" },
+        { "action": "done" }
+      ]
+    }
+  ]
+}

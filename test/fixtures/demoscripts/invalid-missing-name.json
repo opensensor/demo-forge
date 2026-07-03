@@ -1,0 +1,9 @@
+{
+  "url": "http://localhost:3000",
+  "flows": [
+    {
+      "name": "test",
+      "steps": [{ "action": "goto", "url": "/" }]
+    }
+  ]
+}

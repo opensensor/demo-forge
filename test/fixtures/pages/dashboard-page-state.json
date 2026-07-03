@@ -1,0 +1,19 @@
+{
+  "name": "sample-page-state",
+  "description": "Expected accessibility tree state for the dashboard page",
+  "page": "dashboard.html",
+  "expected": {
+    "title": "Mock Web App — Dashboard",
+    "url": "/dashboard",
+    "elements": [
+      { "role": "heading", "name": "Dashboard", "tag": "h1", "id": "page-title" },
+      { "role": "heading", "name": "Welcome back, Demo User", "tag": "h2", "id": "welcome-heading" },
+      { "role": "generic", "name": "Total Users", "id": "total-users" },
+      { "role": "generic", "name": "Active Sessions", "id": "active-sessions" },
+      { "role": "generic", "name": "Revenue", "id": "revenue" },
+      { "role": "generic", "name": "Growth", "id": "growth" },
+      { "role": "link", "name": "Logout", "href": "/login" },
+      { "role": "link", "name": "Contact Form", "href": "/form" }
+    ]
+  }
+}

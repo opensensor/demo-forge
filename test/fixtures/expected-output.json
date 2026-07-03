@@ -1,0 +1,16 @@
+{
+  "name": "expected-render-output",
+  "description": "Expected output structure for a successful render",
+  "flows": {
+    "login-success": {
+      "files": ["login-success.mp4", "login-success.png"],
+      "duration": { "min": 3, "max": 30 },
+      "narration": "The user signs in with their credentials and lands on the dashboard."
+    },
+    "view-dashboard": {
+      "files": ["view-dashboard.mp4", "view-dashboard.png"],
+      "duration": { "min": 3, "max": 30 },
+      "narration": "Here we can see the key metrics on the dashboard."
+    }
+  }
+}

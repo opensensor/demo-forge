@@ -1,0 +1,22 @@
+{
+  "name": "dashboard-walkthrough",
+  "url": "http://localhost:3000",
+  "description": "Demo of navigating the main dashboard",
+  "flows": [
+    {
+      "name": "view-dashboard",
+      "description": "Navigate to dashboard and view key metrics",
+      "steps": [
+        { "action": "goto", "url": "/dashboard" },
+        { "action": "wait_for", "text": "Dashboard" },
+        { "action": "click", "selector": { "role": "heading", "name": "Welcome" } },
+        { "action": "wait_for", "text": "Total Users" },
+        { "action": "screenshot", "label": "dashboard-metrics" },
+        { "action": "narrate", "text": "Here we can see the key metrics on the dashboard." },
+        { "action": "hover", "selector": { "role": "button", "name": "Settings" } },
+        { "action": "wait_for", "text": "Settings menu" },
+        { "action": "done" }
+      ]
+    }
+  ]
+}

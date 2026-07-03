@@ -1,0 +1,17 @@
+{
+  "name": "sample-page-state",
+  "description": "Expected accessibility tree state for the contact form page",
+  "page": "form.html",
+  "expected": {
+    "title": "Mock Web App — Contact Form",
+    "url": "/form",
+    "elements": [
+      { "role": "heading", "name": "Contact Form", "tag": "h1", "id": "page-title" },
+      { "role": "textbox", "name": "Name", "tag": "input", "id": "name", "type": "text" },
+      { "role": "textbox", "name": "Email", "tag": "input", "id": "email", "type": "email" },
+      { "role": "combobox", "name": "Subject", "tag": "select", "id": "subject" },
+      { "role": "textbox", "name": "Message", "tag": "textarea", "id": "message" },
+      { "role": "button", "name": "Submit", "tag": "button", "id": "submit-btn" }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock Web App — Contact Form</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+    h1 { margin-bottom: 1.5rem; text-align: center; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+    input, select, textarea { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+    textarea { resize: vertical; min-height: 100px; }
+    button { width: 100%; padding: 0.75rem; background: #0066cc; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+    button:hover { background: #0055aa; }
+    .success-message { text-align: center; display: none; }
+    .success-message h2 { color: #2e7d32; margin-bottom: 1rem; }
+    .nav { margin-top: 1rem; text-align: center; }
+    .nav a { color: #0066cc; text-decoration: none; margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="form-view">
+      <h1 id="page-title">Contact Form</h1>
+      <form id="contact-form" action="/form" method="post">
+        <div class="form-group"><label for="name">Name</label><input type="text" id="name" name="name" placeholder="Your full name" required></div>
+        <div class="form-group"><label for="email">Email</label><input type="email" id="email" name="email" placeholder="you@example.com" required></div>
+        <div class="form-group"><label for="subject">Subject</label><select id="subject" name="subject" required><option value="">Select a subject</option><option value="general">General Inquiry</option><option value="support">Technical Support</option></select></div>
+        <div class="form-group"><label for="message">Message</label><textarea id="message" name="message" placeholder="Your message..." required></textarea></div>
+        <button type="submit" id="submit-btn">Submit</button>
+      </form>
+      <div class="nav"><a href="/login">Login</a><a href="/dashboard">Dashboard</a></div>
+    </div>
+    <div id="success-view" class="success-message"><h2>Thank you!</h2><p>Your message has been sent successfully.</p><div class="nav"><a href="/login">Login</a><a href="/dashboard">Dashboard</a><a href="/form">Send Another</a></div></div>
+  </div>
+  <script>document.getElementById('contact-form').addEventListener('submit', function(e) { e.preventDefault(); document.getElementById('form-view').style.display = 'none'; document.getElementById('success-view').style.display = 'block'; });</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "form-submission",
+  "url": "http://localhost:3000",
+  "description": "Demo of filling and submitting a form",
+  "flows": [
+    {
+      "name": "submit-form",
+      "description": "Fill out the contact form and submit",
+      "steps": [
+        { "action": "goto", "url": "/form" },
+        { "action": "wait_for", "text": "Contact Form" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "name" }, "value": "Jane Doe" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "email" }, "value": "jane@example.com" },
+        { "action": "fill", "selector": { "role": "textbox", "name": "message" }, "value": "This is a test message for the demo." },
+        { "action": "select", "selector": { "role": "combobox", "name": "subject" }, "value": "General Inquiry" },
+        { "action": "click", "selector": { "role": "button", "name": "Submit" } },
+        { "action": "wait_for", "text": "Thank you" },
+        { "action": "screenshot", "label": "form-success" },
+        { "action": "narrate", "text": "The form is filled out and submitted successfully." },
+        { "action": "done" }
+      ]
+    }
+  ]
+}
