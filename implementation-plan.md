@@ -226,9 +226,32 @@ Wave 7 (Launch):
 - **location**: `packages/cli/src/`
 - **description**: Build CLI using Commander.js. Entry point `bin/demoforge`. Commands: `init`, `explore <url> [--goal]`, `render [flows...]`, `site`, `doctor`, `heal`. Shared options: `--config`, `--verbose`, `--output`, `--quiet`. Error handling with exit codes and user-friendly messages. Config auto-discovery (CWD -> parent directories). `doctor` command checks: ffmpeg, playwright browsers, llama-server, xvfb availability. `--verbose` enables structured debug logging (from shared logger in core). `--quiet` suppresses non-error output. Each command is a separate module. Config is loaded once at CLI entry and injected into command handlers.
 - **validation**: `npx demoforge --help` lists all commands. `npx demoforge init --help` shows command-specific help. Unknown commands show error with suggestions. `--verbose` flag enables debug logging. `--quiet` suppresses output. `demoforge doctor` reports status of all dependencies. `--config` flag overrides auto-discovery. `doctor` detects missing ffmpeg, browsers, and llama-server with install instructions.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created shared structured logger in `packages/core/src/logger.ts` with levels: silent, error, info, warn, debug. Errors always emitted regardless of level (CLI best practice). JSON formatting support.
+  - Created 6 command modules in `packages/cli/src/commands/`: init, explore, render, site, doctor, heal
+  - Rewrote `bin/demoforge` entry point: parses shared options (--config, --verbose, --output, --quiet) before Commander, loads config once, creates logger, injects config into command handlers
+  - Config auto-discovery via `loadConfig()` from CWD upward; `--config` flag overrides
+  - `doctor` command checks: ffmpeg, playwright browsers, llama-server, xvfb with install hints for missing deps
+  - Unknown command handling with suggestions via Commander `command:*` event
+  - 33 tests (RED -> GREEN): logger tests, command module existence, config auto-discovery, shared options, error handling, entry point
+  - Fixed pre-existing logger level comparison bug (was `>=` instead of `<=`)
+  - Fixed Commander v12 argv format requirement (needs `['node', 'program', 'subcommand']`)
+  - Updated vitest.config.ts with resolve aliases for `@demoforge/*` packages
 - **files edited/created**: 
+  - packages/cli/bin/demoforge (rewritten)
+  - packages/cli/src/index.ts (updated exports)
+  - packages/cli/src/cli.test.ts (new — 33 tests)
+  - packages/cli/src/commands/init.ts (new)
+  - packages/cli/src/commands/explore.ts (new)
+  - packages/cli/src/commands/render.ts (new)
+  - packages/cli/src/commands/site.ts (new)
+  - packages/cli/src/commands/doctor.ts (new)
+  - packages/cli/src/commands/heal.ts (new)
+  - packages/core/src/logger.ts (new — shared structured logger)
+  - packages/core/src/index.ts (added logger exports)
+  - packages/cli/package.json (adjusted deps)
+  - vitest.config.ts (added resolve aliases)
 
 ### T7_llm: LLM client adapter
 - **depends_on**: [T2]
@@ -453,9 +476,28 @@ Wave 7 (Launch):
 - **location**: `packages/renderer/src/screenshots/`
 - **description**: Screenshot capture and annotation. Full-page and element-scoped screenshots via browser package (T5_browser). Annotation primitives: arrows, boxes, blur-redaction for sensitive regions (credit cards, emails, passwords). Auto-redaction rules from config (regex patterns). PNG output with configurable quality. Before/after comparison: side-by-side or overlay mode for diff reports. Used by renderer failure output and heal command (T14_heal).
 - **validation**: Full-page screenshot captures entire scrollable page. Element screenshot captures only the targeted element. Annotation boxes are correctly positioned. Blur redaction obscures sensitive text. Config redaction rules match and blur sensitive data. PNG output is valid and viewable.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `ScreenshotCapture` class with `captureFullPage()` and `captureElement()` methods
+  - Created annotation primitives: `BoxAnnotation`, `ArrowAnnotation`, `BlurAnnotation` using SVG-based rendering composited via Sharp
+  - Built-in auto-redaction rules: credit cards, SSNs, emails, passwords, API keys, bearer tokens
+  - Config-driven redaction rules with rect-based blur overlay
+  - PNG output with configurable quality via Sharp
+  - Before/after diff comparison: side-by-side and overlay modes with pixel-wise diff and similarity scoring
+  - Added `sharp` dependency to @demoforge/renderer
+  - 47 tests covering all acceptance criteria (RED->GREEN)
+  - Fixed TypeScript errors for Sharp composite API (non-null input types), SVG escaping
 - **files edited/created**: 
+  - packages/renderer/src/screenshots/types.ts (new — type definitions)
+  - packages/renderer/src/screenshots/capture.ts (new — ScreenshotCapture class)
+  - packages/renderer/src/screenshots/annotation.ts (new — box/arrow/blur rendering)
+  - packages/renderer/src/screenshots/redaction.ts (new — regex-based blur redaction)
+  - packages/renderer/src/screenshots/diff.ts (new — before/after comparison)
+  - packages/renderer/src/screenshots/index.ts (new — module exports)
+  - packages/renderer/src/screenshots/screenshots.test.ts (new — 47 tests)
+  - packages/renderer/src/index.ts (modified — added screenshot exports)
+  - packages/renderer/package.json (modified — added sharp dependency)
+  - package-lock.json (modified) 
 
 ### T14_heal: Heal command — selector repair
 - **depends_on**: [T9a_renderer, T10a_agent, T7_llm, T13_screenshots]

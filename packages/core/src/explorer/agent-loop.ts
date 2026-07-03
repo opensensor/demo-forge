@@ -18,8 +18,6 @@
  * Progress reporting via shared ProgressReporter interface.
  */
 
-import { validateDemoScript } from "../schema/demoScriptSchema.js";
-import { ExplorerError } from "../errors/index.js";
 import type { DemoScript, DemoStep } from "../types/index.js";
 import type { BrowserSession } from "@demoforge/browser";
 import type {
@@ -37,6 +35,7 @@ import type {
   AccessibilityNode,
   FormField,
 } from "./types.js";
+import { Guardrails } from "./guardrails.js";
 
 // ─── Valid Action Types ──────────────────────────────────────────────────────
 
@@ -574,250 +573,6 @@ async function executeAction(
   }
 }
 
-// ─── Guardrails Checker ──────────────────────────────────────────────────────
-
-/**
- * Normalizes a string for comparison: lowercases, replaces hyphens/underscores
- * with spaces, and trims.
- */
-function normalizeForMatch(s: string): string {
-  return s.toLowerCase().replace(/[-_]/g, " ").trim();
-}
-
-/**
- * Checks if an action should be blocked by guardrails.
- * Returns null if allowed, or a reason string if blocked.
- */
-function checkGuardrails(
-  action: LlmActionResponse,
-  guardrails: GuardrailsConfig | undefined,
-  currentPageUrl: string
-): string | null {
-  if (!guardrails) {
-    return null;
-  }
-
-  const params = action.params as Record<string, unknown> | undefined;
-
-  // Check destructive button patterns
-  if (guardrails.destructiveButtonPatterns) {
-    const selector = params?.selector as string;
-    if (selector) {
-      const normalizedSelector = normalizeForMatch(selector);
-      for (const pattern of guardrails.destructiveButtonPatterns) {
-        const normalizedPattern = normalizeForMatch(pattern);
-        if (normalizedSelector.includes(normalizedPattern)) {
-          return `blocked by guardrail: selector "${selector}" matches destructive pattern "${pattern}"`;
-        }
-      }
-    }
-
-    const notes = action.notes?.toLowerCase() || "";
-    for (const pattern of guardrails.destructiveButtonPatterns) {
-      if (notes.includes(pattern.toLowerCase())) {
-        return `blocked by guardrail: action notes mention destructive pattern "${pattern}"`;
-      }
-    }
-  }
-
-  // Check destructive URL patterns
-  if (guardrails.destructiveUrlPatterns) {
-    const url = params?.url as string;
-    if (url) {
-      const urlLower = url.toLowerCase();
-      for (const pattern of guardrails.destructiveUrlPatterns) {
-        if (urlLower.includes(pattern.toLowerCase())) {
-          return `blocked by guardrail: URL "${url}" matches destructive pattern "${pattern}"`;
-        }
-      }
-    }
-  }
-
-  // Check origin allowlist
-  if (guardrails.allowedOrigins && guardrails.allowedOrigins.length > 0) {
-    const url = params?.url as string;
-    if (url) {
-      const parsedUrl = new URL(url);
-      const allowed = guardrails.allowedOrigins.some((origin) => {
-        try {
-          const allowedUrl = new URL(origin);
-          return parsedUrl.hostname === allowedUrl.hostname;
-        } catch {
-          return url.startsWith(origin);
-        }
-      });
-      if (!allowed) {
-        return `blocked by guardrail: URL "${url}" is outside allowed origins`;
-      }
-    }
-  }
-
-  return null;
-}
-
-// ─── Step Builder ─────────────────────────────────────────────────────────────
-
-/**
- * Converts an LLM action response into a DemoStep.
- */
-function buildDemoStep(action: LlmActionResponse): DemoStep | null {
-  const params = action.params as Record<string, unknown> | undefined;
-
-  switch (action.action) {
-    case "goto": {
-      const url = params?.url as string;
-      if (!url) return null;
-      return { goto: url };
-    }
-
-    case "click": {
-      const selector = params?.selector as string;
-      if (!selector) return null;
-      return { click: selector };
-    }
-
-    case "hover": {
-      const selector = params?.selector as string;
-      if (!selector) return null;
-      return { hover: selector };
-    }
-
-    case "fill": {
-      const selector = params?.selector as string;
-      const value = params?.value as string;
-      if (!selector || !value) return null;
-      return { fill: { target: selector, value } };
-    }
-
-    case "select": {
-      const selector = params?.selector as string;
-      const value = params?.value as string;
-      if (!selector || !value) return null;
-      return { select: { target: selector, value } };
-    }
-
-    case "press": {
-      const key = params?.key as string;
-      if (!key) return null;
-      return { press: { key } };
-    }
-
-    case "scroll": {
-      const amount = params?.amount as number;
-      if (amount === undefined) return null;
-      return { scroll: { amount } };
-    }
-
-    case "wait_for": {
-      const text = params?.text as string;
-      const selector = params?.selector as string;
-      if (text) {
-        return { wait_for: { text } };
-      } else if (selector) {
-        return { wait_for: { selector } };
-      }
-      return null;
-    }
-
-    case "narrate": {
-      const narration = action.narration || (params?.narration as string) || "";
-      if (!narration) return null;
-      return { narrate: narration };
-    }
-
-    case "screenshot": {
-      return { screenshot: {} };
-    }
-
-    case "mark_flow_start": {
-      const name = params?.name as string;
-      if (!name) return null;
-      return { mark_flow_start: { name } };
-    }
-
-    case "mark_flow_end": {
-      const name = params?.name as string;
-      if (!name) return null;
-      return { mark_flow_end: { name } };
-    }
-
-    case "done": {
-      return { done: true };
-    }
-
-    case "pause": {
-      const duration = params?.duration as number;
-      if (duration === undefined) return null;
-      return { pause: duration };
-    }
-
-    default:
-      return null;
-  }
-}
-
-// ─── Script Assembly ─────────────────────────────────────────────────────────
-
-/**
- * Assembles a Demo Script from the exploration transcript.
- * Validates the result against the T2 schema.
- */
-function assembleScript(
-  config: ExplorerConfig,
-  turns: ExplorationTurn[]
-): { script: DemoScript; valid: boolean; errors?: string[] } {
-  const steps: DemoStep[] = [];
-
-  for (const turn of turns) {
-    if (turn.blocked) {
-      continue;
-    }
-
-    const action = turn.selectedAction;
-    if (!action) {
-      continue;
-    }
-
-    const step = buildDemoStep(action);
-    if (step) {
-      steps.push(step);
-    }
-  }
-
-  // Ensure the script ends with a done step
-  const lastStep = steps[steps.length - 1];
-  if (!lastStep || !("done" in lastStep)) {
-    steps.push({ done: true });
-  }
-
-  const script: DemoScript = {
-    demo: config.goal,
-    title: config.scriptTemplate.title,
-    viewport: {
-      width: config.viewport.width,
-      height: config.viewport.height,
-      scale: 1,
-    },
-    narration_mode: config.scriptTemplate.narration_mode,
-    steps,
-  };
-
-  // Validate against T2 schema
-  const validation = validateDemoScript(script);
-  if (!validation.success) {
-    const failure = validation as unknown as { success: false; error: { errors: Array<{ path: string[]; message: string }> } };
-    return {
-      script,
-      valid: false,
-      errors: failure.error.errors.map(
-        (e) => `${e.path.join(".")}: ${e.message}`
-      ),
-    };
-  }
-
-  return { script, valid: true };
-}
-
 // ─── ExplorerAgent ───────────────────────────────────────────────────────────
 
 /**
@@ -829,12 +584,20 @@ function assembleScript(
 export class ExplorerAgent {
   private config: ExplorerConfig;
   private transcript: ExplorationTranscript;
+  private guardrails: Guardrails;
   private llmHistory: Array<{ role: "assistant"; content: string }> = [];
   private actionCount = 0;
   private startTime = 0;
 
   constructor(config: ExplorerConfig) {
     this.config = config;
+    this.guardrails = new Guardrails({
+      allowedOrigins: config.guardrails?.allowedOrigins,
+      destructiveButtonPatterns: config.guardrails?.destructiveButtonPatterns,
+      destructiveUrlPatterns: config.guardrails?.destructiveUrlPatterns,
+      maxSteps: config.maxSteps,
+      maxTime: config.maxTime,
+    });
     this.transcript = {
       url: config.url,
       goal: config.goal,
@@ -869,11 +632,28 @@ export class ExplorerAgent {
       // Main exploration loop
       while (this.actionCount < this.config.maxSteps) {
         // Check time budget
-        const elapsed = Date.now() - this.startTime;
-        if (elapsed >= this.config.maxTime) {
-          this.report({ type: "budget_exceeded", message: "Time budget exceeded" });
+        const timeStatus = this.guardrails.checkTimeBudget();
+        if (timeStatus.exceeded) {
+          this.report({ type: "budget_exceeded", message: timeStatus.message });
           this.transcript.stopReason = "max_time";
+          const partial = this.guardrails.emitPartialScript("max_time");
+          this.transcript.assembly = {
+            script: partial.steps.length > 0 ? {
+              demo: this.config.goal,
+              title: this.config.scriptTemplate.title,
+              viewport: { width: this.config.viewport.width, height: this.config.viewport.height, scale: 1 },
+              narration_mode: this.config.scriptTemplate.narration_mode,
+              steps: partial.steps,
+            } : { demo: this.config.goal, title: this.config.scriptTemplate.title, viewport: { width: this.config.viewport.width, height: this.config.viewport.height, scale: 1 }, narration_mode: this.config.scriptTemplate.narration_mode, steps: [{ done: true }] },
+            valid: true,
+          };
           break;
+        }
+
+        // Check step budget
+        const stepStatus = this.guardrails.checkStepBudget();
+        if (stepStatus.warning) {
+          this.report({ type: "budget_warning", message: stepStatus.message });
         }
 
         // Serialize page state
@@ -953,7 +733,7 @@ export class ExplorerAgent {
 
         // Check guardrails
         const currentPageUrl = pageState.url;
-        const guardrailBlockReason = checkGuardrails(llmResponse, this.config.guardrails, currentPageUrl);
+        const guardrailBlockReason = this.guardrails.checkAction(llmResponse).reason;
 
         if (guardrailBlockReason) {
           this.report({
@@ -961,6 +741,14 @@ export class ExplorerAgent {
             turn: turnNumber,
             action: llmResponse.action,
             actionParams: llmResponse.params,
+            blocked: true,
+            blockReason: guardrailBlockReason,
+          });
+
+          this.guardrails.addTranscriptEntry({
+            turn: turnNumber,
+            action: llmResponse.action,
+            params: llmResponse.params,
             blocked: true,
             blockReason: guardrailBlockReason,
           });
@@ -1012,6 +800,17 @@ export class ExplorerAgent {
 
         // Record successful action
         this.actionCount++;
+        this.guardrails.recordStep();
+        const entryParams = llmResponse.action === "narrate" && llmResponse.narration
+          ? { ...llmResponse.params, narration: llmResponse.narration }
+          : llmResponse.params;
+        this.guardrails.addTranscriptEntry({
+          turn: turnNumber,
+          action: llmResponse.action,
+          params: entryParams,
+          result,
+          blocked: false,
+        });
         this.report({
           type: "action_executed",
           turn: turnNumber,
@@ -1058,15 +857,32 @@ export class ExplorerAgent {
 
       // Step budget check
       if (!this.transcript.stopReason) {
-        this.report({
-          type: "budget_exceeded",
-          message: `Step budget exceeded: ${this.actionCount}/${this.config.maxSteps}`,
-        });
-        this.transcript.stopReason = "max_steps";
+        const stepStatus = this.guardrails.checkStepBudget();
+        if (stepStatus.exceeded) {
+          this.report({
+            type: "budget_exceeded",
+            message: stepStatus.message,
+          });
+          this.transcript.stopReason = "max_steps";
+          const partial = this.guardrails.emitPartialScript("max_steps");
+          this.transcript.assembly = {
+            script: partial.steps.length > 0 ? {
+              demo: this.config.goal,
+              title: this.config.scriptTemplate.title,
+              viewport: { width: this.config.viewport.width, height: this.config.viewport.height, scale: 1 },
+              narration_mode: this.config.scriptTemplate.narration_mode,
+              steps: partial.steps,
+            } : { demo: this.config.goal, title: this.config.scriptTemplate.title, viewport: { width: this.config.viewport.width, height: this.config.viewport.height, scale: 1 }, narration_mode: this.config.scriptTemplate.narration_mode, steps: [{ done: true }] },
+            valid: true,
+          };
+        }
       }
 
       // Assemble script
-      const assembly = assembleScript(this.config, this.transcript.turns);
+      const assembly = this.guardrails.assembleScript(
+        this.config.scriptTemplate.title,
+        this.config.scriptTemplate.narration_mode
+      );
       this.transcript.assembly = {
         script: assembly.script,
         valid: assembly.valid,

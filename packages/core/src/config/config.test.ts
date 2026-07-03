@@ -114,6 +114,8 @@ narration:
       expect(result.output.formats).toEqual(["mp4", "webm", "gif"]);
       expect(result.output.budgets.gif).toBe(5242880);
       expect(result.narration.mode).toBe("none");
+      expect(result.explorer.maxSteps).toBe(50);
+      expect(result.explorer.maxTime).toBe(60000);
     });
 
     it("resolves demoforge.yaml from parent directories", async () => {
@@ -231,6 +233,49 @@ narration:
       expect(result.output.budgets.gif).toBe(5242880);
       expect(result.output.budgets.mp4).toBeUndefined();
       expect(result.output.budgets.webm).toBeUndefined();
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // 5. Explorer / Guardrails config
+  // ------------------------------------------------------------------
+  describe("explorer guardrails config", () => {
+    it("parses explorer config with guardrails from demoforge.yaml", async () => {
+      const yaml = `demo: explorer-test
+llm:
+  base_url: http://localhost:8080
+  model: test
+explorer:
+  maxSteps: 25
+  maxTime: 120000
+  guardrails:
+    allowedOrigins:
+      - https://example.com
+      - https://app.example.com
+    destructiveButtonPatterns:
+      - delete account
+      - reset database
+    destructiveUrlPatterns:
+      - /admin/delete
+      - /api/wipe
+`;
+      fs.writeFileSync(path.join(tmp, "demoforge.yaml"), yaml);
+      const result = await configModule.loadConfig(tmp);
+
+      expect(result.explorer.maxSteps).toBe(25);
+      expect(result.explorer.maxTime).toBe(120000);
+      expect(result.explorer.guardrails!.allowedOrigins).toEqual([
+        "https://example.com",
+        "https://app.example.com",
+      ]);
+      expect(result.explorer.guardrails!.destructiveButtonPatterns).toEqual([
+        "delete account",
+        "reset database",
+      ]);
+      expect(result.explorer.guardrails!.destructiveUrlPatterns).toEqual([
+        "/admin/delete",
+        "/api/wipe",
+      ]);
     });
   });
 });

@@ -59,6 +59,17 @@ export interface RenderConfig {
   locales: string[];
 }
 
+/** Explorer agent configuration. */
+export interface ExplorerConfig {
+  maxSteps?: number;
+  maxTime?: number;
+  guardrails?: {
+    allowedOrigins?: string[];
+    destructiveButtonPatterns?: string[];
+    destructiveUrlPatterns?: string[];
+  };
+}
+
 /** Top-level DemoForge configuration. */
 export interface Config {
   demo: string;
@@ -69,6 +80,7 @@ export interface Config {
   redaction: RedactionRule[];
   output: OutputConfig;
   narration: { mode: NarrationMode; voice?: string; speed?: number };
+  explorer: ExplorerConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,9 +116,19 @@ const DEFAULT_NARRATION = {
   mode: "none" as NarrationMode,
 };
 
+const DEFAULT_EXPLORER: ExplorerConfig = {
+  maxSteps: 50,
+  maxTime: 60000,
+  guardrails: {
+    allowedOrigins: [],
+    destructiveButtonPatterns: [],
+    destructiveUrlPatterns: [],
+  },
+};
+
 /** Returns a fresh Config object with all defaults applied. */
 export function defaults(): Config {
-  return {
+  const base: Config = {
     demo: "",
     title: undefined,
     llm: { ...DEFAULT_LLM },
@@ -122,7 +144,17 @@ export function defaults(): Config {
       budgets: { ...DEFAULT_OUTPUT.budgets },
     },
     narration: { ...DEFAULT_NARRATION },
+    explorer: {
+      maxSteps: DEFAULT_EXPLORER.maxSteps,
+      maxTime: DEFAULT_EXPLORER.maxTime,
+      guardrails: {
+        allowedOrigins: [...(DEFAULT_EXPLORER.guardrails?.allowedOrigins ?? [])],
+        destructiveButtonPatterns: [...(DEFAULT_EXPLORER.guardrails?.destructiveButtonPatterns ?? [])],
+        destructiveUrlPatterns: [...(DEFAULT_EXPLORER.guardrails?.destructiveUrlPatterns ?? [])],
+      },
+    },
   };
+  return JSON.parse(JSON.stringify(base));
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +192,22 @@ output:
 
 narration:
   mode: none
+
+explorer:
+  maxSteps: 50
+  maxTime: 60000
+  guardrails:
+    # Only allow navigation within these origins
+    allowedOrigins: []
+    # Block destructive button/text patterns
+    destructiveButtonPatterns:
+      - "delete account"
+      - "reset"
+      - "empty database"
+      - "permanently delete"
+      - "wipe data"
+    # Block destructive URL patterns
+    destructiveUrlPatterns: []
 `;
 
 // ---------------------------------------------------------------------------
@@ -317,6 +365,29 @@ function parseConfig(raw: unknown, configPath: string): Config {
     }
     if (typeof narr.voice === "string") cfg.narration.voice = narr.voice;
     if (typeof narr.speed === "number" && narr.speed > 0) cfg.narration.speed = narr.speed;
+  }
+
+  // explorer — optional, merges with defaults
+  if (obj.explorer && typeof obj.explorer === "object") {
+    const expl = obj.explorer as Record<string, unknown>;
+    if (typeof expl.maxSteps === "number" && expl.maxSteps > 0) {
+      cfg.explorer.maxSteps = expl.maxSteps;
+    }
+    if (typeof expl.maxTime === "number" && expl.maxTime > 0) {
+      cfg.explorer.maxTime = expl.maxTime;
+    }
+    if (expl.guardrails && typeof expl.guardrails === "object") {
+      const gr = expl.guardrails as Record<string, unknown>;
+      if (Array.isArray(gr.allowedOrigins)) {
+        cfg.explorer.guardrails!.allowedOrigins = (gr.allowedOrigins as string[]).filter((o) => typeof o === "string" && o.trim() !== "");
+      }
+      if (Array.isArray(gr.destructiveButtonPatterns)) {
+        cfg.explorer.guardrails!.destructiveButtonPatterns = (gr.destructiveButtonPatterns as string[]).filter((p) => typeof p === "string" && p.trim() !== "");
+      }
+      if (Array.isArray(gr.destructiveUrlPatterns)) {
+        cfg.explorer.guardrails!.destructiveUrlPatterns = (gr.destructiveUrlPatterns as string[]).filter((p) => typeof p === "string" && p.trim() !== "");
+      }
+    }
   }
 
   return cfg;
