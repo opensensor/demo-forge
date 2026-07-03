@@ -71,3 +71,31 @@ export type {
   TtsConfig,
   TtsSynthesisResult,
 } from './audio/tts/types.js';
+
+export type {
+  CaptionStyle,
+  DefaultCaptionStyle,
+  CaptionEntry,
+  BurnedInCaptionOptions,
+  CaptionGenerationResult,
+  CaptionFormat,
+  SubtitleFilterOutput,
+} from './audio/captions/types.js';
+
+export { CaptionGenerator } from './audio/captions/generator.js';
+export { BurnedInCaptions } from './audio/captions/burned-in.js';
+export { SidecarCaptionWriter } from './audio/captions/sidecar-writer.js';
+
+// ─── T11 Effects ───────────────────────────────────────────────────────────────
+
+export { EffectsManager } from './effects/effects.js';
+export type {
+  EffectStyle,
+  EffectConfig,
+  EffectStep,
+  ZoomEffect,
+  DimEffect,
+  CalloutEffect,
+  CalloutPosition,
+  SmoothScrollOptions,
+} from './effects/types.js';
