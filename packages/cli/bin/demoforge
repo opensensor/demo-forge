@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+
+/**
+ * DemoForge CLI entry point.
+ */
+
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { Command } from "commander";
+
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const { version } = require(join(__dirname, "../package.json"));
+
+const program = new Command();
+
+program
+  .name("demoforge")
+  .description("LLM-driven web product demo automation framework")
+  .version(version);
+
+program.exitOverride();
+
+try {
+  program.parse(process.argv);
+} catch (err) {
+  if (err instanceof Error && "code" in err && err.code === "commander.helpDisplayed") {
+    process.exit(0);
+  }
+  throw err;
+}
+
+if (!process.argv.slice(2).length) {
+  program.outputHelp();
+  process.exit(0);
+}

@@ -1,0 +1,27 @@
+export default {
+  semi: true,
+  trailingComma: "all",
+  singleQuote: true,
+  printWidth: 100,
+  tabWidth: 2,
+  useTabs: false,
+  endOfLine: "lf",
+  arrowParens: "always",
+  bracketSpacing: true,
+  bracketSameLine: false,
+  plugins: [],
+  overrides: [
+    {
+      files: ["*.json"],
+      options: {
+        parser: "json",
+      },
+    },
+    {
+      files: ["*.yaml", "*.yml"],
+      options: {
+        singleQuote: false,
+      },
+    },
+  ],
+};

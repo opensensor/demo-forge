@@ -1,0 +1,27 @@
+{
+  "name": "@demoforge/cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DemoForge CLI — command-line interface",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "demoforge": "./bin/demoforge"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "watch": "tsc --build --watch"
+  },
+  "dependencies": {
+    "@demoforge/core": "1.0.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.0"
+  }
+}
