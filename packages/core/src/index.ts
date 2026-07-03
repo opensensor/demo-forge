@@ -15,3 +15,10 @@ export * from "./schema/demoScriptSchema.js";
 
 // Errors
 export * from "./errors/index.js";
+
+// LLM client adapter
+export * from "./llm/client.js";
+export * from "./llm/types.js";
+
+// Config
+export * from "./config/config.js";
