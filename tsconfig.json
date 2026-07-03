@@ -31,8 +31,10 @@
       "@demoforge/browser": ["./packages/browser/src/index.ts"],
       "@demoforge/cli": ["./packages/cli/src/index.ts"],
       "@demoforge/renderer": ["./packages/renderer/src/index.ts"],
-      "@demoforge/site": ["./packages/site/src/index.ts"]
+      "@demoforge/site": ["./packages/site/src/index.ts"],
+      "@demoforge/test-utils": ["./packages/test-utils/src/index.ts"],
+      "@demoforge/test-utils/mock-llm-server": ["./packages/test-utils/src/mock-llm-server.ts"]
     }
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts", "test/playwright.config.ts"]
 }
