@@ -48,3 +48,26 @@ export {
   easeOutBounce,
   linear,
 } from './cursor/easing.js';
+
+// ─── TTS Engine ────────────────────────────────────────────────────────────────
+
+export {
+  TtsEngine,
+  PiperBackend,
+  KokoroBackend,
+  OpenAiBackend,
+  generateLicenseFile,
+  verifyModelSource,
+} from './audio/tts/index.js';
+export type {
+  TtsBackend,
+  BackendSynthesizeOptions,
+  SynthesisResult,
+  AudioFormat,
+  TtsBackendName,
+  AudioOutputMode,
+  FallbackMode,
+  OpenAiTtsConfig,
+  TtsConfig,
+  TtsSynthesisResult,
+} from './audio/tts/types.js';
