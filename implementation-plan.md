@@ -393,9 +393,32 @@ Wave 7 (Launch):
 - **location**: `packages/core/src/explorer/guardrails.ts`
 - **description**: Guardrails and budget enforcement for the explorer agent. Origin allowlist: only actions within configured origins are allowed. Destructive action denylist: block buttons/routes like "Delete account", "Reset", "Empty database" (configurable). Step budget: hard limit on total steps per exploration. Time budget: hard limit on total exploration time. Budget exceeded handling: stop exploration, emit partial script with budget warning. Guardrails are applied before each LLM call and after each response parsing.
 - **validation**: Actions on disallowed origins are blocked. Destructive buttons (configurable) are blocked. Exploration stops after step budget is reached. Exploration stops after time budget is reached. Budget warnings are included in exploration transcript. Guardrails can be configured per-project in demoforge.yaml.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `Guardrails` class in `packages/core/src/explorer/guardrails.ts` with:
+    - Origin allowlist enforcement (exact hostname + subdomain matching)
+    - Destructive button denylist (pattern matching on selectors and notes, case-insensitive, hyphen/underscore normalization)
+    - Destructive URL denylist (case-insensitive substring matching)
+    - Step budget with configurable maxSteps and 10% warning threshold
+    - Time budget with configurable maxTime and 10% warning threshold
+    - Budget exceeded handling: emitPartialScript() produces partial DemoScript with warning message
+    - checkBeforeLlmCall() and checkAfterResponse() hooks for pre/post LLM validation
+    - fromConfig() static factory for loading from demoforge.yaml
+  - Integrated `Guardrails` class into `ExplorerAgent` (replaced inline guardrails functions)
+  - Updated `Config` type and `parseConfig()` to support `explorer` section in demoforge.yaml
+  - Updated scaffold template with explorer/guardrails defaults
+  - 41 tests covering: origin allowlist, destructive patterns, step/time budgets, partial script emission, config loading, edge cases
 - **files edited/created**: 
+  - packages/core/src/explorer/guardrails.ts (new — 475 lines)
+  - packages/core/src/explorer/guardrails.test.ts (new — 470 lines)
+  - packages/core/src/explorer/agent-loop.ts (modified — integrated Guardrails class)
+  - packages/core/src/explorer/index.ts (modified — export Guardrails)
+  - packages/core/src/config/config.ts (modified — added ExplorerConfig type, defaults, parsing)
+  - packages/core/src/config/config.test.ts (modified — added explorer config tests)
+  - packages/core/src/index.ts (modified — export Guardrails)
+- **errors/gotchas**:
+  - Test interference in config tests: `defaults()` was creating fresh objects but `parseConfig` modifications were somehow persisting. Fixed by using `JSON.parse(JSON.stringify(...))` for deep cloning in `defaults()`.
+  - Narration step conversion: `entryToStep()` was using `entry.result` for narration text, but the agent loop stores narration in `action.narration`. Fixed by passing narration in params when recording transcript entries.
 
 ### T10c_transcript: Exploration agent — transcript and assembly
 - **depends_on**: [T10a_agent]
@@ -425,9 +448,25 @@ Wave 7 (Launch):
 - **location**: `packages/renderer/src/effects/`
 - **description**: Visual effects layered on top of renderer. Zoom/pan (Ken Burns effect): CSS transform with smooth interpolation between keyframes. Element spotlight/dim: target element highlighted, surrounding content dimmed. Callout labels: text annotations positioned near target elements. Smooth scroll easing: replaces instant scroll with cubic-bezier animation. All effects are CSS-based (no DOM mutation of app content). Effect timing aligned with step timestamps. Configurable effect style (colors, durations). Effects work alongside the synthetic cursor (T9b_cursor).
 - **validation**: Highlight effect visually highlights target element without breaking app interactivity. Zoom effect smoothly transitions between viewport positions. Callout labels appear at correct positions. Scroll is visibly eased, not instant. Effects are CSS-only (app DOM is not mutated). Effect config changes produce visible differences. Effects work correctly with synthetic cursor overlay.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `EffectsManager` class with full lifecycle (inject, apply effects, cleanup)
+  - Zoom/pan (Ken Burns): CSS `transform: scale() translate()` on overlay div with smooth transition
+  - Spotlight/dim: radial-gradient overlay + CSS box-shadow highlight ring on target selector
+  - Callout labels: positioned div elements near target via `getBoundingClientRect()`, 8 position variants
+  - Smooth scroll: JavaScript `requestAnimationFrame` loop with cubic-bezier easing function
+  - All effects injected via CDP `Page.addScriptToEvaluateOnNewDocument` (CSS-only, no app DOM mutation)
+  - Effect timing aligned with step timestamps via `atTime` parameter and `duration` config
+  - Configurable `EffectStyle` (colors, sizes, durations, fonts, easing curves)
+  - Effects use z-index 1000000-1000002 (well below cursor at 2147483646), pointer-events: none
+  - TDD approach: 61 tests written first (RED), all passing after implementation (GREEN)
+  - RED -> GREEN: 0 tests initially (module not found), 61/61 passing
 - **files edited/created**: 
+  - packages/renderer/src/effects/types.ts (new — 111 lines, type definitions)
+  - packages/renderer/src/effects/effects.ts (new — 636 lines, EffectsManager class)
+  - packages/renderer/src/effects/index.ts (new — 15 lines, module exports)
+  - packages/renderer/src/effects/effects.test.ts (new — 982 lines, 61 tests)
+  - packages/renderer/src/index.ts (modified — added effects re-exports)
 
 ### T12a_tts: Audio — TTS engine
 - **depends_on**: [T9a_renderer]
