@@ -506,9 +506,27 @@ Wave 7 (Launch):
 - **location**: `packages/renderer/src/audio/captions/`
 - **description**: Caption generation and styling. SRT and VTT generation from narration text + timing (from T12a_tts). Caption styling: font, size, position, background (configurable). Sidecar caption files (`.srt`, `.vtt`) alongside video. Burned-in captions: ffmpeg subtitle overlay (uses T9c_capture pipeline). Caption timing aligned with TTS narration or `narrate` step pauses.
 - **validation**: SRT output has correct format (number, timestamp, text). VTT output is valid WebVTT. Caption files are playable in video players. Burned-in captions render correctly in final video. Caption styling is configurable and visible.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `CaptionGenerator` class with SRT and VTT generation methods
+  - SRT output: correct format with number, comma-separated timestamp (HH:MM:SS,mmm --> HH:MM:SS,mmm), and escaped text
+  - VTT output: valid WebVTT with dot-separated timestamps (HH:MM:SS.mmm), HTML content support
+  - Caption styling: configurable font family, size, color, background, horizontal/vertical alignment, border style/color/width
+  - `SidecarCaptionWriter` for writing .srt and .vtt sidecar files alongside video output
+  - `entriesFromTtsResults()` and `entriesFromNarrateSteps()` static methods for timing alignment
+  - `BurnedInCaptions` class with drawtext filter and subtitle muxer approaches for ffmpeg overlay
+  - `buildSubFilter()` and `buildSubMuxerArgs()` for ffmpeg argument generation
+  - 87 comprehensive tests (RED -> GREEN): module exports, default style, entries, SRT/VTT generation, styling, sidecar writing, filter building, timing edge cases, integration
+  - Exported from @demoforge/renderer package index
 - **files edited/created**: 
+  - packages/renderer/src/audio/captions/types.ts (new — CaptionStyle, CaptionEntry, BurnedInCaptionOptions, CaptionGenerationResult, SubtitleFilterOutput, Progress types)
+  - packages/renderer/src/audio/captions/generator.ts (new — CaptionGenerator class with SRT/VTT generation, drawtext filter building)
+  - packages/renderer/src/audio/captions/burned-in.ts (new — BurnedInCaptions class for ffmpeg subtitle overlay)
+  - packages/renderer/src/audio/captions/sidecar-writer.ts (new — SidecarCaptionWriter with TTS/narrate timing alignment)
+  - packages/renderer/src/audio/captions/index.ts (new — module re-exports)
+  - packages/renderer/src/audio/captions/captions.test.ts (new — 87 tests)
+  - packages/renderer/src/audio/index.ts (modified — added captions exports)
+  - packages/renderer/src/index.ts (modified — added captions exports)
 
 ### T13_screenshots: Screenshot annotation and redaction
 - **depends_on**: [T9a_renderer]
