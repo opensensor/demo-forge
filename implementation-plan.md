@@ -561,9 +561,44 @@ Wave 7 (Launch):
 - **location**: `packages/cli/src/commands/heal.ts`, `packages/core/src/heal/`
 - **description**: LLM-assisted selector repair on replay failure. Triggered by `demoforge heal`. On failure: capture current AX tree (via T10a_agent state serialization), take screenshot (T13_screenshots), send to LLM (T7_llm) with failing step, old selector, and new page state. LLM proposes selector patch as reviewable diff (never auto-commits). Diff shows old vs new selector with explanation. Accept/reject workflow: `--accept` flag for automated approval, interactive mode for manual review. Healed script is validated against schema (T2) before saving.
 - **validation**: Heal correctly identifies broken selectors and proposes alternatives. Proposed diff is valid YAML. Healed script passes schema validation. `--accept` flag auto-applies changes. Without `--accept`, changes are reviewable but not applied. LLM explanation is human-readable. Screenshot included in LLM context for VLM-assisted healing. Fails gracefully if LLM is unavailable (no silent auto-commit).
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `packages/core/src/heal/types.ts` — Heal types: FailingStep, SelectorPatch, HealConfig, HealResult, HealProposal, SelectorDiff
+  - Created `packages/core/src/heal/heal-engine.ts` — Main healing engine:
+    - `serializePageState()` — mirrors T10a_agent page state serialization (AX tree extraction)
+    - `captureScreenshot()` — mirrors T13_screenshots screenshot capture
+    - `sendHealRequest()` — LLM request with system prompt + failing step + page state
+    - `applyPatches()` — immutable patch application to DemoScript
+    - `extractFailingStep()` — identifies healable steps from script + error
+    - `healStep()` — main entry point: capture → LLM → diff → validate → save
+  - Created `packages/core/src/heal/diff.ts` — Reviewable diff generation:
+    - `generateSelectorDiff()` — human-readable text diff
+    - `generateYamlDiff()` — YAML-formatted diff for review
+    - `patchesToDiffs()` — structured diff conversion
+  - Created `packages/core/src/heal/index.ts` — Module exports
+  - Rewrote `packages/cli/src/commands/heal.ts` — Full CLI heal command:
+    - `Healer` class managing full heal flow
+    - Browser session creation for page state capture
+    - LLM client integration for selector repair proposals
+    - Interactive review mode and `--accept` auto-approval
+    - Schema validation before saving healed scripts
+    - Graceful failure when LLM is unavailable
+  - Created `packages/core/src/heal/heal.test.ts` — 32 tests (all passing):
+    - extractFailingStep: 8 tests (click, fill, hover, wait_for, goto, done, edge cases)
+    - applyPatches: 7 tests (click, fill, hover, immutability, multi-patch, CSS selectors)
+    - Schema validation: 4 tests (patched scripts pass, invalid scripts fail)
+    - Diff generation: 6 tests (text diff, YAML diff, empty patches, multi-patch)
+    - healStep integration: 7 tests (LLM unavailable, no-accept, --accept, screenshot, AX tree)
+  - Updated `packages/core/src/index.ts` — Added heal module export + fixed explorer type conflicts
+  - Fixed TypeScript type conflicts between explorer/types.ts and config/llm exports
 - **files edited/created**: 
+  - packages/core/src/heal/types.ts (new)
+  - packages/core/src/heal/heal-engine.ts (new)
+  - packages/core/src/heal/diff.ts (new)
+  - packages/core/src/heal/index.ts (new)
+  - packages/core/src/heal/heal.test.ts (new)
+  - packages/cli/src/commands/heal.ts (rewritten)
+  - packages/core/src/index.ts (modified — added heal export, fixed explorer type conflicts)
 
 ### T15_virtual_time: Renderer — virtual time support
 - **depends_on**: [T9a_renderer]

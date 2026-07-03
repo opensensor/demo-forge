@@ -156,3 +156,33 @@ export class LlmApiError extends DemoForgeError {
     Object.setPrototypeOf(this, LlmApiError.prototype);
   }
 }
+
+export interface SeedErrorOptions {
+  command?: string;
+  exitCode?: number | null;
+  timeoutMs?: number;
+  stdout?: string;
+  stderr?: string;
+  attempts?: number;
+}
+
+export class SeedError extends DemoForgeError {
+  override name = "SeedError";
+  command?: string;
+  exitCode?: number | null;
+  timeoutMs?: number;
+  stdout?: string;
+  stderr?: string;
+  attempts?: number;
+
+  constructor(message: string, options?: SeedErrorOptions) {
+    super(message);
+    this.command = options?.command;
+    this.exitCode = options?.exitCode;
+    this.timeoutMs = options?.timeoutMs;
+    this.stdout = options?.stdout;
+    this.stderr = options?.stderr;
+    this.attempts = options?.attempts;
+    Object.setPrototypeOf(this, SeedError.prototype);
+  }
+}
