@@ -1,0 +1,113 @@
+name: 'DemoForge CI'
+description: 'Run DemoForge render pipeline in CI'
+
+inputs:
+  workflow:
+    description: 'Workflow file path'
+    required: false
+    default: '.github/workflows/demoforge.yml'
+  flows:
+    description: 'Flow names to render (comma-separated)'
+    required: false
+    default: ''
+  heal:
+    description: 'Enable heal step on render failure'
+    required: false
+    default: 'false'
+  matrix:
+    description: 'Enable matrix rendering'
+    required: false
+    default: 'false'
+  upload-assets:
+    description: 'Upload generated assets'
+    required: false
+    default: 'true'
+  commit-assets:
+    description: 'Commit generated assets'
+    required: false
+    default: 'false'
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '20'
+  playwright-browsers:
+    description: 'Browser cache key'
+    required: false
+    default: 'playwright-browsers'
+
+outputs:
+  asset-count:
+    description: 'Number of assets generated'
+  render-status:
+    description: 'Overall render status'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-${{ inputs.playwright-browsers }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.playwright-browsers }}-
+          ${{ runner.os }}-playwright-
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+      shell: bash
+
+    - name: Check ffmpeg
+      run: which ffmpeg || sudo apt-get install -y ffmpeg
+      shell: bash
+
+    - name: Render demos
+      run: |
+        flows="${{ inputs.flows }}"
+        if [ -n "$flows" ]; then
+          demoforge render $flows
+        else
+          demoforge render
+        fi
+      shell: bash
+      continue-on-error: ${{ inputs.heal == 'true' }}
+
+    - name: Heal broken selectors
+      if: ${{ inputs.heal == 'true' && failure() }}
+      run: demoforge heal --accept
+      shell: bash
+
+    - name: Generate demo site
+      run: demoforge site
+      shell: bash
+
+    - name: Upload assets
+      if: ${{ inputs.upload-assets == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: demoforge-assets
+        path: .demoforge/output/
+        retention-days: 30
+
+    - name: Commit and push assets
+      if: ${{ inputs.commit-assets == 'true' && success() }}
+      run: |
+        git config user.name "DemoForge CI"
+        git config user.email "ci@demoforge.dev"
+        git add .demoforge/output/
+        git diff --cached --quiet || git commit -m "chore: update demo assets [skip ci]"
+        git push || echo "No changes to push or push failed"
+      shell: bash

@@ -436,13 +436,250 @@ export async function loadConfig(cwd?: string): Promise<Config> {
 }
 
 // ---------------------------------------------------------------------------
+// CI workflow scaffold templates (T18_ci)
+// ---------------------------------------------------------------------------
+
+// GitHub Actions uses ${{ }} syntax. In JS template literals, $ must be escaped
+// as \${ to avoid being parsed as a template expression. We use a placeholder
+// and replace it after template creation to keep templates readable.
+function ghExpr(expr: string): string {
+  return `${'\${'}${expr}}`;
+}
+
+function buildActionYaml(): string {
+  const ge = ghExpr;
+  return `name: 'DemoForge CI'
+description: 'Run DemoForge render pipeline in CI'
+
+inputs:
+  workflow:
+    description: 'Workflow file path'
+    required: false
+    default: '.github/workflows/demoforge.yml'
+  flows:
+    description: 'Flow names to render (comma-separated)'
+    required: false
+    default: ''
+  heal:
+    description: 'Enable heal step on render failure'
+    required: false
+    default: 'false'
+  matrix:
+    description: 'Enable matrix rendering'
+    required: false
+    default: 'false'
+  upload-assets:
+    description: 'Upload generated assets'
+    required: false
+    default: 'true'
+  commit-assets:
+    description: 'Commit generated assets'
+    required: false
+    default: 'false'
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '20'
+  playwright-browsers:
+    description: 'Browser cache key'
+    required: false
+    default: 'playwright-browsers'
+
+outputs:
+  asset-count:
+    description: 'Number of assets generated'
+  render-status:
+    description: 'Overall render status'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${ge('inputs.node-version')}
+        cache: 'npm'
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${ge('runner.os')}-${ge('inputs.playwright-browsers')}-${ge("hashFiles('**/package-lock.json')")}
+        restore-keys: |
+          ${ge('runner.os')}-${ge('inputs.playwright-browsers')}-
+          ${ge('runner.os')}-playwright-
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+      shell: bash
+
+    - name: Check ffmpeg
+      run: which ffmpeg || sudo apt-get install -y ffmpeg
+      shell: bash
+
+    - name: Render demos
+      run: |
+        flows="${ge('inputs.flows')}"
+        if [ -n "$flows" ]; then
+          demoforge render $flows
+        else
+          demoforge render
+        fi
+      shell: bash
+      continue-on-error: ${ge("inputs.heal == 'true'")}
+
+    - name: Heal broken selectors
+      if: ${ge("inputs.heal == 'true' && failure()")}
+      run: demoforge heal --accept
+      shell: bash
+
+    - name: Generate demo site
+      run: demoforge site
+      shell: bash
+
+    - name: Upload assets
+      if: ${ge("inputs.upload-assets == 'true'")}
+      uses: actions/upload-artifact@v4
+      with:
+        name: demoforge-assets
+        path: .demoforge/output/
+        retention-days: 30
+
+    - name: Commit and push assets
+      if: ${ge("inputs.commit-assets == 'true' && success()")}
+      run: |
+        git config user.name "DemoForge CI"
+        git config user.email "ci@demoforge.dev"
+        git add .demoforge/output/
+        git diff --cached --quiet || git commit -m "chore: update demo assets [skip ci]"
+        git push || echo "No changes to push or push failed"
+      shell: bash
+`;
+}
+
+function buildWorkflowYaml(): string {
+  const ge = ghExpr;
+  return `name: DemoForge CI
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      flows:
+        description: 'Flow names to render (comma-separated)'
+        required: false
+        default: ''
+      heal:
+        description: 'Enable heal step on render failure'
+        required: false
+        default: 'false'
+        type: boolean
+      matrix:
+        description: 'Enable matrix rendering'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  demoforge:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20]
+        playwright-browser: [chromium]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${ge('matrix.node-version')}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${ge('matrix.node-version')}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${ge('runner.os')}-playwright-${ge('matrix.playwright-browser')}-${ge("hashFiles('**/package-lock.json')")}
+          restore-keys: |
+            ${ge('runner.os')}-playwright-${ge('matrix.playwright-browser')}-
+            ${ge('runner.os')}-playwright-
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${ge('matrix.playwright-browser')}
+
+      - name: Check ffmpeg
+        run: which ffmpeg || sudo apt-get install -y ffmpeg
+
+      - name: Render demos
+        run: |
+          flows="${ge('github.event.inputs.flows')}"
+          if [ -n "$flows" ]; then
+            demoforge render $flows
+          else
+            demoforge render
+          fi
+        shell: bash
+        env:
+          DEMOFORGE_HEAL: ${ge("github.event.inputs.heal || 'false'")}
+          DEMOFORGE_MATRIX: ${ge("github.event.inputs.matrix || 'false'")}
+
+      - name: Heal broken selectors
+        if: ${ge("github.event.inputs.heal == 'true' && failure()")}
+        run: demoforge heal --accept
+        shell: bash
+
+      - name: Generate demo site
+        run: demoforge site
+        shell: bash
+
+      - name: Upload assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: demoforge-assets
+          path: .demoforge/output/
+          retention-days: 30
+
+      - name: Commit and push assets
+        if: success()
+        run: |
+          git config user.name "DemoForge CI"
+          git config user.email "ci@demoforge.dev"
+          git add .demoforge/output/
+          git diff --cached --quiet || git commit -m "chore: update demo assets [skip ci]"
+          git push || echo "No changes to push or push failed"
+        shell: bash
+`;
+}
+
+// ---------------------------------------------------------------------------
 // initConfig — scaffold writing
 // ---------------------------------------------------------------------------
 
 /**
- * Write a scaffold demoforge.yaml to the target directory.
+ * Write scaffold files to the target directory.
  *
- * Does NOT overwrite an existing config file.
+ * Creates:
+ * - demoforge.yaml — project configuration
+ * - .github/workflows/demoforge.yml — GitHub Actions workflow
+ * - action.yml — reusable composite GitHub Action
+ *
+ * Does NOT overwrite any existing files.
  *
  * @param dir — directory to write the scaffold to
  */
@@ -460,4 +697,18 @@ export async function initConfig(dir: string): Promise<void> {
   }
 
   fs.writeFileSync(path.join(targetDir, "demoforge.yaml"), SCAFFOLD_TEMPLATE);
+
+  // Scaffold GitHub Actions workflow
+  const workflowDir = path.join(targetDir, ".github", "workflows");
+  const workflowFile = path.join(workflowDir, "demoforge.yml");
+  if (!fs.existsSync(workflowFile)) {
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(workflowFile, buildWorkflowYaml());
+  }
+
+  // Scaffold composite action
+  const actionFile = path.join(targetDir, "action.yml");
+  if (!fs.existsSync(actionFile)) {
+    fs.writeFileSync(actionFile, buildActionYaml());
+  }
 }
