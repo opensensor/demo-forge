@@ -642,9 +642,30 @@ Wave 7 (Launch):
 - **location**: `packages/renderer/src/matrix/`
 - **description**: Render multiple variations from one Demo Script. Matrix dimensions: viewport sizes (from T3_config), color schemes (light/dark via `prefers-color-scheme` CSS media query), locales (via `navigator.language` override). Parallel rendering of matrix cells. Output naming: `{flow}-{viewport}-{theme}-{locale}.{ext}`. Diff report: per-step SSIM/pixel-diff between renders to surface unintended UI changes. Configurable matrix (subset of all combinations). Effects (T11_effects) are applied per-cell.
 - **validation**: Render produces one output per matrix cell. Output filenames include all matrix dimensions. Light/dark renders show correct color scheme. Locale renders use correct language. Diff report identifies pixel differences between versions. SSIM scores are accurate. Matrix rendering is parallel (faster than sequential).
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `RenderMatrix` class with full matrix rendering pipeline
+  - Implemented viewport dimension: multiple sizes from config/render_matrix
+  - Implemented theme dimension: light/dark via `prefers-color-scheme` CSS media query override injected via CDP
+  - Implemented locale dimension: `navigator.language` and `navigator.languages` override via CDP
+  - Parallel rendering with concurrency-limited worker pool (default: 3 concurrent)
+  - Output naming: `{flow}-{viewport}-{theme}-{locale}.{ext}`
+  - Implemented SSIM (Structural Similarity Index) from scratch using grayscale sliding-window comparison
+  - Per-step diff report: pixel-diff + SSIM between each cell and baseline cell
+  - Configurable matrix: explicit cell list or full Cartesian product from render_matrix config
+  - Effects (T11_effects) applied per-cell via EffectsManager
+  - Browser factory injection for testability (createBrowser callback)
+  - 44 comprehensive tests covering all acceptance criteria (RED->GREEN)
+  - Fixed: output formats use render-time config, not constructor config
+  - Fixed: theme CSS override uses prefers-color-scheme media query + root color-scheme
+  - Fixed: locale override sets both navigator.language and navigator.languages
 - **files edited/created**: 
+  - packages/renderer/src/matrix/types.ts (new — 125 lines, type definitions)
+  - packages/renderer/src/matrix/ssim.ts (new — 127 lines, SSIM calculation)
+  - packages/renderer/src/matrix/matrix.ts (new — 510 lines, RenderMatrix class)
+  - packages/renderer/src/matrix/matrix.test.ts (new — 962 lines, 44 tests)
+  - packages/renderer/src/matrix/index.ts (new — 18 lines, module exports)
+  - packages/renderer/src/index.ts (modified — added matrix exports)
 
 ### T17_site: Demo site generator
 - **depends_on**: [T2_core, T9c_capture, T11_effects]
