@@ -699,9 +699,19 @@ Wave 7 (Launch):
 - **location**: `action.yml`, `.github/workflows/demoforge.yml`
 - **description**: GitHub Action for CI demo asset regeneration. Action: checks out repo, installs dependencies, runs `demoforge render` on release tags. Commits/uploads generated assets. Fails loudly when a flow can no longer replay (smoke test of the product). Optional `heal` step on render failure (T14_heal). Cache Playwright browsers and ffmpeg artifacts. Configurable matrix in workflow YAML (T16_matrix). Example workflow file included in scaffold (T3_config). Full pipeline validation: CLI, renderer, ffmpeg, site generator, heal, and matrix all tested.
 - **validation**: Action runs successfully on a test repository with a valid Demo Script. Assets are committed and uploaded on success. Action fails when a flow breaks (assertion). Heal step triggers on render failure and proposes fixes. Browser cache reduces install time. Workflow YAML is scaffolded by `demoforge init`. Full pipeline is tested end-to-end.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `packages/cli/src/ci/action.yml` — reusable composite GitHub Action with inputs (flows, heal, matrix, upload-assets, commit-assets, node-version), outputs (asset-count, render-status), and 11 steps (checkout, node setup, browser cache, npm ci, playwright install, ffmpeg check, render, heal, site, upload, commit)
+  - Created `.github/workflows/demoforge.yml` — example workflow triggered on release tags and workflow_dispatch, with matrix strategy (node-version, playwright-browser), conditional heal step on failure, asset upload with 30-day retention
+  - Updated `initConfig()` in `packages/core/src/config/config.ts` — now scaffolds demoforge.yaml, .github/workflows/demoforge.yml, and action.yml on `demoforge init`
+  - Created `packages/cli/src/ci/ci.test.ts` — 21 tests covering: action.yml structure, workflow YAML triggers/matrix/heal/upload, init scaffolding (create + no-overwrite), YAML validation, full pipeline consistency
+  - RED -> GREEN: tests initially failed (files missing), all 21 passing after implementation
+  - Full test suite: 892 tests passing (891 pre-existing + 21 new - 0 regressions)
 - **files edited/created**: 
+  - packages/cli/src/ci/action.yml (new — 113 lines)
+  - packages/cli/src/ci/ci.test.ts (new — 428 lines, 21 tests)
+  - .github/workflows/demoforge.yml (new — 98 lines)
+  - packages/core/src/config/config.ts (modified — added buildActionYaml/buildWorkflowYaml, updated initConfig)
 
 ### T19_docs: Documentation and dogfooding
 - **depends_on**: [T16_matrix, T17_site]
