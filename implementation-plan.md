@@ -708,9 +708,32 @@ Wave 7 (Launch):
 - **location**: `README.md`, `packages/*/README.md`, demo assets produced by DemoForge itself
 - **description**: README with installation, quickstart, architecture overview, CLI reference, config reference, and API docs. Per-package READMEs for monorepo structure. Dogfooding: produce all demo assets (videos, screenshots, GIFs, demo site) using DemoForge itself. Example Demo Scripts for common patterns (login flow, dashboard walkthrough, form submission). CONTRIBUTING.md for OSS contributors. Dogfooding uses: T6_cli for orchestration, T9a_renderer for video, T9c_capture for encoding, T12a_tts for narration, T12b_captions for captions, T17_site for demo gallery.
 - **validation**: README installs and runs without errors. Quickstart produces a video within 15 minutes. CLI reference is complete and accurate. Example scripts validate against schema. Dogfood assets are produced and viewable. Demo site generated from dogfood assets is deployable. CONTRIBUTING.md covers monorepo development workflow.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created root README.md (701 lines) with: installation, quickstart, architecture overview, demo script format, CLI reference (all 6 commands), configuration reference (all fields with defaults), API reference (all 4 packages), example scripts section, dogfooding section, contributing link
+  - Created CONTRIBUTING.md (395 lines) with: monorepo structure, development setup, building/testing, adding new packages, code style, commit guidelines, PR checklist, troubleshooting
+  - Created 4 example demo scripts in examples/ (all schema-validated via Zod): login-flow.json, dashboard-walkthrough.json, form-submission.json, demoforge-overview.json
+  - Created per-package READMEs: core (174 lines), browser (168 lines), cli (122 lines), renderer (206 lines), site (173 lines) — each with installation, usage examples, API docs, and test commands
+  - Created .demoforge/demoforge.yaml dogfooding config with viewport/theme/locale matrix, narration mode, guardrails
+  - Copied example scripts to .demoforge/scripts/ for dogfooding pipeline
+  - Fixed pre-existing site tsconfig.json path aliases (rootDir issue with cross-package imports)
+  - Verified: all 893 tests pass, all 4 example scripts validate against Zod schema, CLI runs correctly
 - **files edited/created**: 
+  - README.md (new — 701 lines)
+  - CONTRIBUTING.md (new — 395 lines)
+  - examples/login-flow.json (new — 16 steps)
+  - examples/dashboard-walkthrough.json (new — 20 steps)
+  - examples/form-submission.json (new — 22 steps)
+  - examples/demoforge-overview.json (new — 24 steps)
+  - packages/core/README.md (new — 174 lines)
+  - packages/browser/README.md (new — 168 lines)
+  - packages/cli/README.md (new — 122 lines)
+  - packages/renderer/README.md (new — 206 lines)
+  - packages/site/README.md (new — 173 lines)
+  - .demoforge/demoforge.yaml (new — dogfooding config)
+  - .demoforge/scripts/*.json (copied from examples/)
+  - packages/site/tsconfig.json (modified — added path aliases)
+  - implementation-plan.md (modified — T19 status)
 
 ### T20_integration: Integration tests and final validation
 - **depends_on**: [T18_ci, T19_docs]
