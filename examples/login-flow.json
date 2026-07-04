@@ -1,0 +1,26 @@
+{
+  "demo": "login-flow",
+  "title": "User Login Flow",
+  "viewport": { "width": 1280, "height": 720, "scale": 1 },
+  "narration_mode": "captions",
+  "steps": [
+    { "goto": "https://example-app.com/login" },
+    { "narrate": "We start on the login page, where users enter their credentials to access the application." },
+    { "wait_for": { "text": "Sign In" } },
+    { "click": { "role": "heading", "name": "Sign In" }, "effect": "highlight" },
+    { "narrate": "The sign-in form is clearly presented with email and password fields." },
+    { "fill": { "target": { "role": "textbox", "name": "Email" }, "value": "demo@example.com" }, "effect": "zoom" },
+    { "narrate": "The user enters their email address into the email field." },
+    { "fill": { "target": { "role": "textbox", "name": "Password" }, "value": "••••••••" }, "effect": "zoom" },
+    { "narrate": "Next, the password is entered. Sensitive input is masked for privacy." },
+    { "click": { "role": "button", "name": "Sign In" }, "effect": "highlight" },
+    { "narrate": "With credentials entered, the user clicks the Sign In button." },
+    { "wait_for": { "text": "Dashboard" } },
+    { "narrate": "After authentication, the user is redirected to the main dashboard." },
+    { "screenshot": { "name": "logged-in-dashboard" } },
+    { "click": { "role": "link", "name": "Settings" }, "effect": "callout" },
+    { "narrate": "From the dashboard, the user navigates to Settings to configure preferences." },
+    { "wait_for": { "text": "Settings" } },
+    { "done": true }
+  ]
+}

@@ -672,9 +672,27 @@ Wave 7 (Launch):
 - **location**: `packages/site/src/`
 - **description**: Static site generator from rendered flows. `demoforge site` command. Template: HTML with embedded video (from T9c_capture), step-by-step captioned stills, narration text, effects catalog (from T11_effects). Index page: gallery of all flows with thumbnails. Per-flow page: video player, step timeline with captions, copyable narration. Themeable: light/dark mode toggle, configurable colors/fonts. Deployable: outputs static HTML/CSS/JS to `dist/` directory. No JavaScript framework dependency (vanilla HTML/CSS/JS). Search and filter by flow name/tags. Asset validation: validates that referenced videos and images exist and are valid (depends on T9c_capture).
 - **validation**: `demoforge site` produces `dist/index.html` and `dist/flows/*.html`. Index page lists all flows with thumbnails. Per-flow pages embed video and captioned stills. Site is viewable in Chrome/Firefox/Safari without a dev server. Light/dark theme toggle works. Static files deploy correctly to any static host (Netlify, GitHub Pages). Asset validation catches missing or corrupt files.
-- **status**: Not Completed
+- **status**: Completed
 - **log**: 
+  - Created `SiteGenerator` class with full lifecycle: addFlow, search, filterByTag, validateAssets, generate
+  - Index page: responsive grid gallery with thumbnails, search input, tag filter buttons, light/dark theme
+  - Per-flow page: video player with format switching (MP4/WebM/GIF/WebP), step timeline with icons/descriptions, copyable narration via data attributes, effects catalog, metadata display
+  - Theme system: CSS custom properties for colors/fonts, light/dark mode toggle with localStorage persistence, prefers-color-scheme detection
+  - Static assets: vanilla CSS (responsive, themeable) and vanilla JS (theme toggle, search, tag filter, copy-to-clipboard, video format switching, toast notifications)
+  - Asset validation: checks video files (empty, header validation for MP4/WebM/GIF/WebP), screenshot files (header validation for PNG/JPG/GIF), missing file detection
+  - CLI command: `demoforge site` with options: --output, --source, --title, --theme, --no-search, --no-tags, --no-metadata, --format, --validate
+  - Flow discovery: auto-discovers flows from .demoforge/output/<flow-name>/ directories
+  - 37 tests all passing (RED -> GREEN)
 - **files edited/created**: 
+  - packages/site/src/site-generator.ts (new — 252 lines)
+  - packages/site/src/templates.ts (new — 334 lines)
+  - packages/site/src/assets.ts (new — 664 lines)
+  - packages/site/src/validate.ts (new — 106 lines)
+  - packages/site/src/index.ts (updated — exports)
+  - packages/site/src/site-generator.test.ts (new — 457 lines, 37 tests)
+  - packages/cli/src/commands/site.ts (modified — full CLI implementation)
+  - packages/renderer/src/index.ts (modified — added OutputMetadata type export)
+  - packages/site/package.json (modified — added @demoforge/renderer dependency)
 
 ### T18_ci: CI integration — GitHub Action
 - **depends_on**: [T6_cli, T9a_renderer, T9c_capture, T17_site, T14_heal, T16_matrix]

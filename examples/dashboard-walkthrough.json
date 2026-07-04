@@ -1,0 +1,32 @@
+{
+  "demo": "dashboard-walkthrough",
+  "title": "Dashboard Walkthrough",
+  "viewport": { "width": 1280, "height": 720, "scale": 1 },
+  "narration_mode": "captions",
+  "steps": [
+    { "goto": "https://example-app.com/dashboard" },
+    { "narrate": "The dashboard provides a comprehensive overview of key metrics and recent activity." },
+    { "wait_for": { "text": "Dashboard" } },
+    { "click": { "role": "heading", "name": "Dashboard" }, "effect": "highlight" },
+    { "narrate": "At the top of the page, we see the main navigation and user profile." },
+    { "mark_flow_start": { "name": "metrics" } },
+    { "narrate": "Let's explore the key metrics section." },
+    { "click": { "role": "heading", "name": "Total Users" }, "effect": "zoom" },
+    { "narrate": "Total Users shows the current user count with a trend indicator." },
+    { "click": { "role": "heading", "name": "Revenue" }, "effect": "zoom" },
+    { "narrate": "Revenue displays the current period earnings with a comparison to the previous period." },
+    { "click": { "role": "heading", "name": "Conversion Rate" }, "effect": "zoom" },
+    { "narrate": "Conversion Rate tracks the percentage of visitors who complete a desired action." },
+    { "mark_flow_end": { "name": "metrics" } },
+    { "narrate": "Moving to the activity feed below the metrics." },
+    { "scroll": { "amount": 300 } },
+    { "narrate": "The activity feed shows recent events and user actions in real time." },
+    { "hover": { "role": "button", "name": "Refresh" }, "effect": "dim" },
+    { "narrate": "The Refresh button updates all metrics and activity data." },
+    { "click": { "role": "button", "name": "Export Report" }, "effect": "callout" },
+    { "narrate": "Users can export a detailed report in PDF or CSV format for sharing." },
+    { "wait_for": { "text": "Export complete" } },
+    { "screenshot": { "name": "full-dashboard" } },
+    { "done": true }
+  ]
+}
