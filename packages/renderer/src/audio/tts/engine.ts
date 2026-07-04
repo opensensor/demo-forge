@@ -15,8 +15,6 @@ import type {
   TtsConfig,
   TtsBackendName,
   TtsSynthesisResult,
-  AudioOutputMode,
-  FallbackMode,
 } from './types.js';
 import type { TtsBackend } from './types.js';
 
@@ -271,7 +269,7 @@ export class TtsEngine {
     }
 
     try {
-      return generateLicenseFile(this.config.backend, this.config.outputDir);
+      return generateLicenseFile(this.config.backend, this.config.outputDir) ?? undefined;
     } catch {
       return undefined;
     }

@@ -13,7 +13,7 @@
  * - RenderMatrix class configuration
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 
 import type { DemoScript } from '@demoforge/core';

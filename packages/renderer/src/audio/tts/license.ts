@@ -140,6 +140,9 @@ export function verifyModelSource(
 
   const hash = computeFileHash(modelPath);
   const expectedModel = licenseInfo[0];
+  if (!expectedModel) {
+    return { valid: false, reason: `No license metadata registered for backend: ${backend}` };
+  }
 
   // If we have a known hash, verify against it
   if (expectedModel.modelHash && hash !== expectedModel.modelHash) {

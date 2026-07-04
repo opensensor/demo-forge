@@ -32,6 +32,34 @@ const DEFAULT_STYLE: Required<CaptionStyle> = {
   borderWidth: 2,
 };
 
+// ─── Filter helpers ───────────────────────────────────────────────────────────
+
+/** Escape a file path for use inside an ffmpeg filter graph (\ : ' , ; [ ]). */
+function escapeFilterPath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]');
+}
+
+/**
+ * Convert a #RRGGBB or #RRGGBBAA hex color to ASS &HAABBGGRR format.
+ * ASS alpha is inverted: 00 = opaque, FF = fully transparent.
+ */
+function hexToAssColor(hex: string): string {
+  const raw = hex.replace('#', '');
+  const r = raw.slice(0, 2) || '00';
+  const g = raw.slice(2, 4) || '00';
+  const b = raw.slice(4, 6) || '00';
+  const alpha = raw.length >= 8 ? 255 - parseInt(raw.slice(6, 8), 16) : 0;
+  const a = alpha.toString(16).padStart(2, '0');
+  return `&H${a}${b}${g}${r}`.toUpperCase();
+}
+
 // ─── CaptionGenerator ─────────────────────────────────────────────────────────
 
 export class CaptionGenerator {
@@ -186,14 +214,14 @@ export class CaptionGenerator {
 
   /**
    * Build an FFmpeg subtitle filter argument for burned-in captions.
-   * Uses the drawtext filter with configurable styling.
+   * Uses the subtitles filter with configurable styling via force_style.
+   * The SRT file is consumed by the filter itself (not as a second input).
    */
   buildSubFilter(inputPath: string, srtPath: string): SubtitleFilterOutput {
-    const filterArg = this.buildDrawtextFilter(srtPath);
+    const filterArg = this.buildSubtitlesFilter(srtPath);
     const ffmpegArgs = [
       '-y',
       '-i', inputPath,
-      '-i', srtPath,
       '-filter_complex', filterArg,
       '-c:v', 'libx264',
       '-c:a', 'copy',
@@ -252,46 +280,47 @@ export class CaptionGenerator {
       .replace(/>/g, '&gt;');
   }
 
-  private buildDrawtextFilter(srtPath: string): string {
-    const fontFamily = this.style.fontFamily.replace(/'/g, "\\'");
-    const fontSize = this.style.fontSize;
-    const fontColor = this.style.fontColor;
+  /**
+   * Build the subtitles filter expression. The SRT path is escaped for the
+   * filter graph and the caption style is mapped to ASS force_style overrides.
+   */
+  private buildSubtitlesFilter(srtPath: string): string {
+    const escapedSrt = escapeFilterPath(srtPath);
+    const forceStyle = [
+      `FontName=${this.style.fontFamily}`,
+      `FontSize=${this.style.fontSize}`,
+      `PrimaryColour=${hexToAssColor(this.style.fontColor)}`,
+      `BackColour=${hexToAssColor(this.style.backgroundColor)}`,
+      `OutlineColour=${hexToAssColor(this.style.borderColor)}`,
+      `Outline=${this.style.borderWidth}`,
+      `BorderStyle=${this.style.borderStyle === 'box' ? 3 : 1}`,
+      `Alignment=${this.resolveAssAlignment()}`,
+    ].join(',');
+
+    return `[0:v]subtitles=filename=${escapedSrt}:force_style='${forceStyle}'[v]`;
+  }
+
+  /**
+   * Map horizontal/vertical alignment to an ASS numpad alignment value:
+   * 1-3 bottom, 4-6 middle, 7-9 top (left/center/right within each row).
+   */
+  private resolveAssAlignment(): number {
     const hAlign = this.style.horizontalAlign;
     const vAlign = this.style.verticalAlign;
 
-    // Calculate x/y positions based on alignment
-    let x: string;
-    let y: string;
+    const column = hAlign === 'left' ? 1 : hAlign === 'right' ? 3 : 2;
 
-    switch (hAlign) {
-      case 'left':
-        x = '10';
-        break;
-      case 'right':
-        x = 'w-text_w-10';
-        break;
-      default:
-        x = '(w-text_w)/2';
-    }
-
-    if (typeof vAlign === 'string' && vAlign.endsWith('%')) {
+    let row = 0; // bottom
+    if (vAlign === 'top') {
+      row = 6;
+    } else if (vAlign === 'middle') {
+      row = 3;
+    } else if (typeof vAlign === 'string' && vAlign.endsWith('%')) {
       const pct = parseInt(vAlign, 10);
-      y = `${pct}%*h`;
-    } else {
-      switch (vAlign) {
-        case 'top':
-          y = '10';
-          break;
-        case 'middle':
-          y = '(h-text_h)/2';
-          break;
-        default:
-          y = 'h-text_h-10';
-      }
+      row = pct < 33 ? 6 : pct <= 66 ? 3 : 0;
     }
 
-    // Build the drawtext expression
-    return `[0:v]drawtext=fontfile='${fontFamily}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}:text='${srtPath}':borderw=${this.style.borderWidth}:bordercolor=${this.style.borderColor}:box=1:boxcolor=${this.style.backgroundColor}[v]`;
+    return row + column;
   }
 
   private getDefaultPath(format: CaptionFormat): string {

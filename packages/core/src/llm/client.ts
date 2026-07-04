@@ -123,20 +123,33 @@ export function copywriterConfig(options?: {
   };
 }
 
+/**
+ * Detect whether an error represents a request timeout.
+ * AbortController.abort() produces name "AbortError"; undici's
+ * AbortSignal.timeout produces name "TimeoutError".
+ */
+function isTimeoutError(err: Error): boolean {
+  return (
+    err.name === "AbortError" ||
+    err.name === "TimeoutError" ||
+    err.message.toLowerCase().includes("timeout")
+  );
+}
+
 // ---------------------------------------------------------------------------
 // LlmClient — thin OpenAI-compatible API client
 // ---------------------------------------------------------------------------
 
 export class LlmClient {
   private readonly baseURL: string;
-  private readonly model: string;
+  private readonly model?: string;
   private readonly apiKey?: string;
   private readonly timeout: number;
   private readonly maxRetries: number;
 
   constructor(config: LlmClientConfig) {
     this.baseURL = config.baseURL.replace(/\/+$/, "");
-    this.model = config.model ?? "llama3.1";
+    this.model = config.model?.trim() || undefined;
     this.apiKey = config.apiKey;
     this.timeout = config.timeout ?? 30000;
     this.maxRetries = config.maxRetries ?? 3;
@@ -155,11 +168,13 @@ export class LlmClient {
     const url = `${this.baseURL}/v1/chat/completions`;
 
     const body: Record<string, unknown> = {
-      model: this.model,
       messages: requestConfig.messages,
       temperature: requestConfig.temperature ?? 0.3,
       max_tokens: requestConfig.max_tokens ?? 1024,
     };
+    if (this.model) {
+      body.model = this.model;
+    }
 
     // Add response_format if provided (JSON schema or json_object)
     if (requestConfig.response_format) {
@@ -229,6 +244,15 @@ export class LlmClient {
         // Network errors (connection refused, timeout, etc.)
         lastError = err instanceof Error ? err : new Error(String(err));
 
+        // Timeouts are not retried: the request already consumed the full
+        // timeout budget, so classify and fail fast.
+        if (isTimeoutError(lastError)) {
+          throw new LlmTimeoutError(`Request timed out after ${this.timeout}ms`, {
+            timeout: this.timeout,
+            url,
+          });
+        }
+
         // Retry on transient errors
         if (attempt < this.maxRetries) {
           const backoffMs = this.exponentialBackoff(attempt);
@@ -240,12 +264,6 @@ export class LlmClient {
 
     // All retries exhausted
     if (lastError) {
-      if (lastError.name === "TimeoutError" || lastError.message.includes("timeout")) {
-        throw new LlmTimeoutError("Request timed out after all retries", {
-          timeout: this.timeout,
-          url,
-        });
-      }
       throw new LlmUnavailableError(
         `LLM server is unreachable at ${this.baseURL}: ${lastError.message}. ` +
           "Ensure llama-server or an OpenAI-compatible API is running and accessible.",

@@ -38,8 +38,12 @@ export interface BaseEncodingOptions {
   height?: number;
   /** Target frame rate. Defaults to input fps. */
   fps?: number;
+  /** Limit encoder worker threads. Useful on desktop machines already running LLM/GPU workloads. */
+  threads?: number;
   /** Quality preset. Default: 'balanced'. */
   quality?: QualityPreset;
+  /** Explicit output file path. Default: a timestamped file in tmpDir. */
+  outputPath?: string;
 }
 
 export interface Mp4EncodingOptions extends BaseEncodingOptions {

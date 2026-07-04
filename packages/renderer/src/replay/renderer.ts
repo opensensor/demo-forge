@@ -6,6 +6,9 @@
  * CSP detection, and stability detection.
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { DemoScript, WaitForCondition } from '@demoforge/core';
 import {
   isClickStep,
@@ -19,6 +22,7 @@ import {
   isPauseStep,
   isPressStep,
   isScreenshotStep,
+  isScrollStep,
   isSelectStep,
   isWaitForStep,
 } from '@demoforge/core';
@@ -164,7 +168,12 @@ export class Renderer {
       this._runStep(step, index)
         .then((result) => {
           clearTimeout(timeout);
-          resolve(result);
+          if (result.status === 'success') {
+            // Report per-step duration (not cumulative time since render start)
+            resolve({ ...result, duration: Date.now() - stepStart });
+          } else {
+            resolve(result);
+          }
         })
         .catch((error) => {
           clearTimeout(timeout);
@@ -202,6 +211,9 @@ export class Renderer {
     }
     if (isPressStep(step)) {
       return this._executePress(step, index);
+    }
+    if (isScrollStep(step)) {
+      return this._executeScroll(step, index);
     }
     if (isWaitForStep(step)) {
       return this._executeWaitFor(step, index);
@@ -320,6 +332,19 @@ export class Renderer {
     };
   }
 
+  private async _executeScroll(
+    step: { scroll: { amount: number }; effect?: string },
+    index: number,
+  ): Promise<StepResultSuccess> {
+    await this._browser.scroll({ deltaY: step.scroll.amount });
+    return {
+      status: 'success',
+      stepIndex: index,
+      stepType: 'scroll',
+      duration: Date.now() - this._startTime,
+    };
+  }
+
   private async _executeWaitFor(
     step: { wait_for: WaitForCondition; effect?: string },
     index: number,
@@ -359,10 +384,24 @@ export class Renderer {
   }
 
   private async _executeScreenshot(
-    _step: { screenshot: { name?: string; annotate?: string[] } },
+    step: { screenshot: { name?: string; annotate?: string[] } },
     index: number,
   ): Promise<StepResultSuccess> {
-    await this._browser.screenshot();
+    // Let in-flight requests and re-renders settle before capturing.
+    // Apps that poll or animate never reach network-idle, so a short
+    // timeout is treated as "settled enough", not an error.
+    try {
+      await this._browser.waitForNavigation?.({ networkIdle: true, timeout: 3000 });
+    } catch {
+      // Never settled — capture anyway.
+    }
+    const buffer = await this._browser.screenshot();
+    if (this._config.outputDir) {
+      const dir = join(this._config.outputDir, 'screenshots');
+      mkdirSync(dir, { recursive: true });
+      const name = step.screenshot.name ?? `step-${index}`;
+      writeFileSync(join(dir, `${name}.png`), buffer);
+    }
     return {
       status: 'success',
       stepIndex: index,
@@ -399,6 +438,7 @@ export class Renderer {
     step: { pause: number },
     index: number,
   ): Promise<StepResultTiming> {
+    await new Promise((resolve) => setTimeout(resolve, step.pause));
     return {
       status: 'timing',
       stepIndex: index,
@@ -430,6 +470,7 @@ export class Renderer {
     if (isFillStep(step)) return 'fill';
     if (isSelectStep(step)) return 'select';
     if (isPressStep(step)) return 'press';
+    if (isScrollStep(step)) return 'scroll';
     if (isWaitForStep(step)) return 'wait_for';
     if (isNarrateStep(step)) return 'narrate';
     if (isScreenshotStep(step)) return 'screenshot';

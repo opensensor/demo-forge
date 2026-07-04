@@ -12,67 +12,54 @@ import type { RedactionRule } from '@demoforge/core';
 
 // ─── Apply Redaction ─────────────────────────────────────────────────────────
 
+/** Result of applying redaction: the processed buffer and how many regions were actually blurred. */
+export interface RedactionApplication {
+  buffer: Buffer;
+  applied: number;
+}
+
 /**
  * Apply redaction rules to a screenshot image buffer.
  *
- * For each rule, attempts to locate sensitive data regions and apply blur.
- * Since we operate on a raster image (not DOM), redaction works by:
- * 1. Detecting regions that likely contain sensitive data (based on heuristics)
- * 2. Blurring those regions
- *
- * The primary use case is redacting known regions passed as annotations.
- * For regex-based auto-redaction, the caller should provide rect hints
- * for where to apply the blur, or use the built-in pattern detection.
+ * The primary use case is redacting known regions passed with rect hints.
+ * Since we operate on a raster image (not DOM), pure regex rules without
+ * rect hints are not actionable (we can't OCR the image) — the caller
+ * should convert regex rules to rect hints via DOM inspection first.
  */
 export async function applyRedaction(
   imageBuffer: Buffer,
   rules: RedactionRule[],
 ): Promise<Buffer> {
+  const { buffer } = await applyRedactionWithCount(imageBuffer, rules);
+  return buffer;
+}
+
+/**
+ * Apply redaction rules and report how many regions were actually blurred.
+ * Rules without a resolvable region contribute nothing to the count.
+ */
+export async function applyRedactionWithCount(
+  imageBuffer: Buffer,
+  rules: RedactionRule[],
+): Promise<RedactionApplication> {
   if (rules.length === 0) {
-    return imageBuffer;
+    return { buffer: imageBuffer, applied: 0 };
   }
 
-  // For regex-based redaction on a raster image, we apply a global blur
-  // to regions that match common sensitive data patterns.
-  // Since we can't OCR the image, we blur the entire image with a
-  // configurable intensity based on the number of rules.
-  //
-  // The typical flow is:
-  // 1. Renderer captures screenshot
-  // 2. Redaction rules are applied as annotations (with rects)
-  // 3. This module blurs the annotated regions
-  //
-  // For pure regex rules without rects, we return the image unchanged
-  // since we can't perform OCR on a raster image. The caller should
-  // convert regex rules to annotation rects using DOM inspection.
-
-  const rulesWithRects = rules.filter((_rule): _rule is RedactionRule & { rect?: { x: number; y: number; width: number; height: number } } => {
-    // Rules that include rect hints are actionable
-    return true;
-  });
-
-  if (rulesWithRects.length === 0) {
-    // No actionable rules — return unchanged
-    // In a real scenario, the caller would need to provide rect hints
-    // via DOM inspection before calling this function
-    return imageBuffer;
-  }
-
-  // Build blur annotations from rules with rects
+  // Build blur annotations from rules that carry rect hints
   const blurAnnotations: Array<{ rect: { x: number; y: number; width: number; height: number }; sigma?: number }> = [];
 
-  for (const rule of rulesWithRects) {
-    if (rule.rect) {
-      blurAnnotations.push({
-        rect: rule.rect,
-        sigma: 10,
-      });
+  for (const rule of rules) {
+    const rect = (rule as RedactionRule & { rect?: { x: number; y: number; width: number; height: number } }).rect;
+    if (rect) {
+      blurAnnotations.push({ rect, sigma: 10 });
     }
     // rule.pattern and rule.label are informational; actual blur is applied via rect
   }
 
   if (blurAnnotations.length === 0) {
-    return imageBuffer;
+    // No actionable rules — return unchanged and report zero redactions
+    return { buffer: imageBuffer, applied: 0 };
   }
 
   return applyBlurRegions(imageBuffer, blurAnnotations);
@@ -80,17 +67,18 @@ export async function applyRedaction(
 
 /**
  * Apply blur to multiple rectangular regions in an image.
+ * Returns the processed buffer and the number of regions actually blurred.
  */
 async function applyBlurRegions(
   imageBuffer: Buffer,
   regions: Array<{ rect: { x: number; y: number; width: number; height: number }; sigma?: number }>,
-): Promise<Buffer> {
+): Promise<RedactionApplication> {
   const metadata = await sharp(imageBuffer).metadata();
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
 
   if (width === 0 || height === 0) {
-    return imageBuffer;
+    return { buffer: imageBuffer, applied: 0 };
   }
 
   const compositeInputs: Array<{ input: Buffer; top: number; left: number }> = [];
@@ -125,14 +113,14 @@ async function applyBlurRegions(
   }
 
   if (compositeInputs.length === 0) {
-    return imageBuffer;
+    return { buffer: imageBuffer, applied: 0 };
   }
 
   const result = await sharp(imageBuffer)
     .composite(compositeInputs)
     .toBuffer();
 
-  return result;
+  return { buffer: result, applied: compositeInputs.length };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

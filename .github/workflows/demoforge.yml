@@ -2,8 +2,12 @@ name: DemoForge CI
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
     inputs:
       flows:
@@ -22,49 +26,91 @@ on:
         type: boolean
 
 jobs:
-  demoforge:
+  test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [20]
-        playwright-browser: [chromium]
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ matrix.playwright-browser }}-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-playwright-${{ matrix.playwright-browser }}-
             ${{ runner.os }}-playwright-
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps ${{ matrix.playwright-browser }}
+        run: npx playwright install --with-deps chromium
 
-      - name: Check ffmpeg
-        run: which ffmpeg || sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg
+        run: which ffmpeg || sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+  demoforge:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install ffmpeg
+        run: which ffmpeg || sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Render demos
         run: |
           flows="${{ github.event.inputs.flows }}"
           if [ -n "$flows" ]; then
-            demoforge render $flows
+            npx demoforge render $flows
           else
-            demoforge render
+            npx demoforge render
           fi
         shell: bash
         env:
@@ -73,11 +119,11 @@ jobs:
 
       - name: Heal broken selectors
         if: ${{ github.event.inputs.heal == 'true' && failure() }}
-        run: demoforge heal --accept
+        run: npx demoforge heal --accept
         shell: bash
 
       - name: Generate demo site
-        run: demoforge site
+        run: npx demoforge site
         shell: bash
 
       - name: Upload assets
@@ -86,13 +132,3 @@ jobs:
           name: demoforge-assets
           path: .demoforge/output/
           retention-days: 30
-
-      - name: Commit and push assets
-        if: success()
-        run: |
-          git config user.name "DemoForge CI"
-          git config user.email "ci@demoforge.dev"
-          git add .demoforge/output/
-          git diff --cached --quiet || git commit -m "chore: update demo assets [skip ci]"
-          git push || echo "No changes to push or push failed"
-        shell: bash

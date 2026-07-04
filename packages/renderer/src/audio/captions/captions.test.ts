@@ -5,7 +5,7 @@
  * burned-in captions, and timing alignment with TTS/narrate steps.
  */
 
-import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -19,12 +19,10 @@ vi.mock('node:child_process', () => ({
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
 const TEST_OUTPUT_DIR = '/tmp/demoforge-captions-test';
-const NARRATION_TEXT = 'Welcome to the dashboard.';
-const NARRATION_TEXT_2 = 'Click the submit button.';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function mockFs(outputDir: string): void {
+function mockFs(): void {
   vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
   vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
   vi.mocked(fs.existsSync).mockReturnValue(true);
@@ -429,7 +427,7 @@ describe('CaptionGenerator — styling', () => {
 
 describe('CaptionGenerator — sidecar file writing', () => {
   beforeEach(() => {
-    mockFs(TEST_OUTPUT_DIR);
+    mockFs();
   });
 
   it('should write SRT file to output directory', async () => {
@@ -490,28 +488,37 @@ describe('CaptionGenerator — sidecar file writing', () => {
   });
 });
 
-// ─── CaptionGenerator — drawtext filter building ──────────────────────────────
+// ─── CaptionGenerator — subtitles filter building ─────────────────────────────
 
-describe('CaptionGenerator — drawtext filter building', () => {
-  it('should build a drawtext filter with default style', async () => {
+describe('CaptionGenerator — subtitles filter building', () => {
+  it('should build a subtitles filter with default style', async () => {
     const { CaptionGenerator } = await import('./generator.js');
     const gen = new CaptionGenerator();
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('drawtext');
-    expect(result.filterArg).toContain('fontsize=24');
-    expect(result.filterArg).toContain('fontcolor=#FFFFFF');
-    expect(result.filterArg).toContain('box=1');
-    expect(result.filterArg).toContain('boxcolor=#00000080');
+    expect(result.filterArg).toContain('subtitles=');
+    expect(result.filterArg).toContain('captions.srt');
+    expect(result.filterArg).toContain('FontSize=24');
+    expect(result.filterArg).toContain('PrimaryColour=&H00FFFFFF');
+    expect(result.filterArg).toContain('BorderStyle=3');
+    expect(result.filterArg).toContain('BackColour=&H7F000000');
   });
 
-  it('should build a drawtext filter with custom style', async () => {
+  it('should build a subtitles filter with custom style', async () => {
     const { CaptionGenerator } = await import('./generator.js');
     const gen = new CaptionGenerator({ style: { fontSize: 32, fontColor: '#FFFF00' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('fontsize=32');
-    expect(result.filterArg).toContain('fontcolor=#FFFF00');
+    expect(result.filterArg).toContain('FontSize=32');
+    expect(result.filterArg).toContain('PrimaryColour=&H0000FFFF');
+  });
+
+  it('should escape special characters in the SRT path for the filter graph', async () => {
+    const { CaptionGenerator } = await import('./generator.js');
+    const gen = new CaptionGenerator();
+    const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/my:captions.srt');
+
+    expect(result.filterArg).toContain('my\\:captions.srt');
   });
 
   it('should build correct ffmpeg args for burned-in captions', async () => {
@@ -522,9 +529,12 @@ describe('CaptionGenerator — drawtext filter building', () => {
     expect(result.ffmpegArgs).toContain('-y');
     expect(result.ffmpegArgs).toContain('-i');
     expect(result.ffmpegArgs).toContain('/tmp/input.mp4');
-    expect(result.ffmpegArgs).toContain('/tmp/captions.srt');
+    expect(result.ffmpegArgs).toContain('-filter_complex');
+    expect(result.ffmpegArgs).toContain(result.filterArg);
     expect(result.ffmpegArgs).toContain('-c:v');
     expect(result.ffmpegArgs).toContain('libx264');
+    // The SRT is consumed by the subtitles filter, not as a second input
+    expect(result.ffmpegArgs).not.toContain('/tmp/captions.srt');
   });
 
   it('should build muxer args for subtitle stream embedding', async () => {
@@ -542,7 +552,8 @@ describe('CaptionGenerator — drawtext filter building', () => {
     const gen = new CaptionGenerator({ style: { horizontalAlign: 'left' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('x=10');
+    // ASS numpad alignment: bottom-left = 1
+    expect(result.filterArg).toContain('Alignment=1');
   });
 
   it('should handle right horizontal alignment in filter', async () => {
@@ -550,7 +561,8 @@ describe('CaptionGenerator — drawtext filter building', () => {
     const gen = new CaptionGenerator({ style: { horizontalAlign: 'right' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('w-text_w-10');
+    // ASS numpad alignment: bottom-right = 3
+    expect(result.filterArg).toContain('Alignment=3');
   });
 
   it('should handle top vertical alignment in filter', async () => {
@@ -558,7 +570,8 @@ describe('CaptionGenerator — drawtext filter building', () => {
     const gen = new CaptionGenerator({ style: { verticalAlign: 'top' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('y=10');
+    // ASS numpad alignment: top-center = 8
+    expect(result.filterArg).toContain('Alignment=8');
   });
 
   it('should handle percentage-based vertical alignment in filter', async () => {
@@ -566,7 +579,8 @@ describe('CaptionGenerator — drawtext filter building', () => {
     const gen = new CaptionGenerator({ style: { verticalAlign: '80%' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('y=80');
+    // 80% down the frame maps to the bottom row (bottom-center = 2)
+    expect(result.filterArg).toContain('Alignment=2');
   });
 
   it('should handle no border style in filter', async () => {
@@ -574,8 +588,8 @@ describe('CaptionGenerator — drawtext filter building', () => {
     const gen = new CaptionGenerator({ style: { borderStyle: 'none' } });
     const result = gen.buildSubFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('borderw=2');
-    expect(result.filterArg).toContain('box=1');
+    expect(result.filterArg).toContain('Outline=2');
+    expect(result.filterArg).toContain('BorderStyle=1');
   });
 });
 
@@ -657,16 +671,33 @@ describe('BurnedInCaptions — module exports', () => {
 // ─── BurnedInCaptions — filter building ───────────────────────────────────────
 
 describe('BurnedInCaptions — filter building', () => {
-  it('should build a drawtext filter for burned-in captions', async () => {
+  it('should build a subtitles filter for burned-in captions', async () => {
     const { BurnedInCaptions } = await import('./burned-in.js');
     const bic = new BurnedInCaptions();
     const result = bic.buildFilter('/tmp/input.mp4', '/tmp/captions.srt');
 
-    expect(result.filterArg).toContain('drawtext');
-    expect(result.filterArg).toContain('fontsize=24');
-    expect(result.filterArg).toContain('fontcolor=WHITE');
+    expect(result.filterArg).toContain('subtitles=');
+    expect(result.filterArg).toContain('captions.srt');
+    expect(result.filterArg).toContain('FontSize=24');
+    expect(result.filterArg).toContain('PrimaryColour=&H00FFFFFF');
     expect(result.ffmpegArgs).toContain('-c:v');
     expect(result.ffmpegArgs).toContain('libx264');
+  });
+
+  it('should escape special characters in the SRT path for the filter graph', async () => {
+    const { BurnedInCaptions } = await import('./burned-in.js');
+    const bic = new BurnedInCaptions();
+    const result = bic.buildFilter('/tmp/input.mp4', '/tmp/my:captions.srt');
+
+    expect(result.filterArg).toContain('my\\:captions.srt');
+  });
+
+  it('should honor a custom output path in filter args', async () => {
+    const { BurnedInCaptions } = await import('./burned-in.js');
+    const bic = new BurnedInCaptions();
+    const result = bic.buildFilter('/tmp/input.mp4', '/tmp/captions.srt', '/tmp/custom-output.mp4');
+
+    expect(result.ffmpegArgs[result.ffmpegArgs.length - 1]).toBe('/tmp/custom-output.mp4');
   });
 
   it('should build muxer args for subtitle embedding', async () => {
@@ -718,7 +749,7 @@ describe('SidecarCaptionWriter — module exports', () => {
 
 describe('SidecarCaptionWriter — write', () => {
   beforeEach(() => {
-    mockFs(TEST_OUTPUT_DIR);
+    mockFs();
   });
 
   it('should write SRT and VTT sidecar files', async () => {
@@ -876,7 +907,7 @@ describe('SidecarCaptionWriter — entriesFromNarrateSteps', () => {
 
 describe('Integration — SRT round-trip', () => {
   beforeEach(() => {
-    mockFs(TEST_OUTPUT_DIR);
+    mockFs();
   });
 
   it('should produce SRT that can be parsed back', async () => {
@@ -908,7 +939,7 @@ describe('Integration — SRT round-trip', () => {
 
 describe('Integration — VTT round-trip', () => {
   beforeEach(() => {
-    mockFs(TEST_OUTPUT_DIR);
+    mockFs();
   });
 
   it('should produce valid WebVTT that can be parsed back', async () => {

@@ -15,7 +15,7 @@ import type {
 } from './types.js';
 
 import { applyAnnotations } from './annotation.js';
-import { applyRedaction } from './redaction.js';
+import { applyRedactionWithCount } from './redaction.js';
 
 // ─── ScreenshotCapture ───────────────────────────────────────────────────────
 
@@ -69,8 +69,11 @@ export class ScreenshotCapture {
     if (redactionRules.length > 0 || autoRedact) {
       const builtInRules = autoRedact ? getBuiltInRedactionRules() : [];
       const allRules = [...builtInRules, ...redactionRules];
-      processedBuffer = await applyRedaction(processedBuffer, allRules);
-      redactionsApplied = allRules.length;
+      // Only count redactions that were actually applied — rules without a
+      // resolvable region (pure regex patterns) blur nothing.
+      const redactionResult = await applyRedactionWithCount(processedBuffer, allRules);
+      processedBuffer = redactionResult.buffer;
+      redactionsApplied = redactionResult.applied;
     }
 
     // Apply annotations (boxes, arrows, blur regions)

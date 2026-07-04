@@ -114,9 +114,22 @@ describe('ScreenshotCapture', () => {
   });
 
   describe('with redaction rules', () => {
-    it('applies redaction rules', async () => {
+    it('reports zero redactions for regex-only rules (no resolvable region)', async () => {
       const rules: RedactionRule[] = [
         { pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', label: 'email' },
+      ];
+      const capture = new ScreenshotCapture(mockBrowser as BrowserSession);
+      const result = await capture.captureFullPage({ redactionRules: rules });
+
+      // Regex rules without rect hints cannot be located on a raster image,
+      // so nothing is blurred and nothing is counted.
+      expect(result.redactionsApplied).toBe(0);
+    });
+
+    it('counts redactions only for rules with rect hints', async () => {
+      const rules = [
+        { pattern: 'ssn', label: 'ssn', rect: { x: 0, y: 0, width: 50, height: 30 } } as unknown as RedactionRule,
+        { pattern: 'email', label: 'email' } as RedactionRule,
       ];
       const capture = new ScreenshotCapture(mockBrowser as BrowserSession);
       const result = await capture.captureFullPage({ redactionRules: rules });
@@ -124,11 +137,13 @@ describe('ScreenshotCapture', () => {
       expect(result.redactionsApplied).toBe(1);
     });
 
-    it('applies auto-redaction for sensitive patterns', async () => {
+    it('reports zero redactions for auto-redaction without region detection', async () => {
       const capture = new ScreenshotCapture(mockBrowser as BrowserSession);
       const result = await capture.captureFullPage({ autoRedact: true });
 
-      expect(result.redactionsApplied).toBeGreaterThan(0);
+      // Built-in auto-redaction rules are regex patterns with no rects,
+      // so nothing is actually blurred — the count must be honest.
+      expect(result.redactionsApplied).toBe(0);
     });
   });
 });

@@ -5,7 +5,7 @@
  */
 
 import { Command } from "commander";
-import { initConfig, type Config } from "@demoforge/core";
+import { initConfig } from "@demoforge/core";
 import { createLogger } from "@demoforge/core";
 
 export function createInitCommand(logger: ReturnType<typeof createLogger>): Command {

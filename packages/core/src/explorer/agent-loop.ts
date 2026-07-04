@@ -18,22 +18,18 @@
  * Progress reporting via shared ProgressReporter interface.
  */
 
-import type { DemoScript, DemoStep } from "../types/index.js";
 import type { BrowserSession } from "@demoforge/browser";
 import type {
   ExplorerConfig,
   ExplorerActionType,
   LlmActionResponse,
-  LlmClient,
-  ProgressReporter,
   ProgressEvent,
-  ExplorationTurn,
   ExplorationTranscript,
   ExplorationResult,
-  GuardrailsConfig,
   PageState,
   AccessibilityNode,
   FormField,
+  OpenDialog,
 } from "./types.js";
 import { Guardrails } from "./guardrails.js";
 
@@ -127,6 +123,11 @@ function buildSystemPrompt(config: ExplorerConfig): string {
   lines.push("- `pause`: Pause for a duration. Params: { duration: number }");
   lines.push("- `done`: End the exploration session. Params: {}");
   lines.push("");
+  lines.push("Selectors MUST be copied verbatim from the \"Interactive Elements\" list in");
+  lines.push("the page state (e.g. `#incident-search` or `role=button[name=\"Allowlist\" i]`).");
+  lines.push("Never invent CSS paths — if the element you need is not listed, scroll or");
+  lines.push("navigate to reveal it first.");
+  lines.push("");
 
   // Goal context
   lines.push("## Demo Goal");
@@ -192,6 +193,8 @@ function buildSystemPrompt(config: ExplorerConfig): string {
   lines.push("- Identify key interactive elements (buttons, links, forms)");
   lines.push("- Fill in form fields with realistic test data");
   lines.push("- Wait for page transitions after actions");
+  lines.push("- After opening recommendations, AI analysis, WHOIS, details, or report panels, wait or scroll so the newly rendered content is visible before moving on");
+  lines.push("- If the goal asks you to complete a modal or dialog action, do not stop after opening the modal; use the modal's visible action selectors to submit, approve, send, or confirm it");
   lines.push("- Add narration at key moments to explain what's happening");
   lines.push("- End with the `done` action when the demo is complete");
   lines.push("- Focus on the user-facing features that showcase the product");
@@ -205,28 +208,210 @@ function buildSystemPrompt(config: ExplorerConfig): string {
  * Serializes the current browser page state into a structured format
  * suitable for LLM context.
  */
+/** Raw interactive element data collected in the page context. */
+interface InteractiveElement {
+  tag: string;
+  id: string;
+  type: string;
+  role: string;
+  name: string;
+  text: string;
+  value: string;
+  placeholder: string;
+  required: boolean;
+  disabled: boolean;
+  options?: string[];
+}
+
+/** Map a tag/type to its implicit ARIA role for role= selectors. */
+function implicitRole(el: InteractiveElement): string {
+  if (el.role) return el.role;
+  switch (el.tag) {
+    case "button":
+      return "button";
+    case "a":
+      return "link";
+    case "select":
+      return "combobox";
+    case "textarea":
+      return "textbox";
+    case "input":
+      if (el.type === "checkbox") return "checkbox";
+      if (el.type === "radio") return "radio";
+      if (el.type === "button" || el.type === "submit") return "button";
+      return "textbox";
+    default:
+      return "";
+  }
+}
+
+/** Derive the most reliable selector for an element: #id first, then role=. */
+function deriveSelector(el: InteractiveElement): string | null {
+  if (el.id) return `#${el.id}`;
+  const role = implicitRole(el);
+  if (role && el.name) {
+    const escaped = el.name.replace(/"/g, '\\"');
+    return `role=${role}[name="${escaped}" i]`;
+  }
+  if (role) return `role=${role}`;
+  return null;
+}
+
 async function serializePageState(
   browser: BrowserSession,
-  config: ExplorerConfig
+  _config: ExplorerConfig
 ): Promise<PageState> {
   const browserState = await browser.getState();
 
-  // Extract accessibility tree and selectors from the page
   const axTree: AccessibilityNode[] = [];
   const selectors: string[] = [];
   const formFields: FormField[] = [];
+  let openDialogs: OpenDialog[] = [];
+  let visibleText = "";
 
   try {
-    // Use Playwright's accessibility snapshot
     const page = browser.page;
     if (page) {
-      const snapshot = await (page as any).accessibility.snapshot();
-      if (snapshot) {
-        extractAxTree(snapshot as Record<string, unknown>, axTree, selectors, formFields, 0);
+      // Scan the live DOM for visible interactive elements. This yields
+      // selectors that actually resolve (unlike the deprecated accessibility
+      // snapshot, which carries no DOM identity).
+      const elements: InteractiveElement[] = await (page as any).evaluate(() => {
+        const out: unknown[] = [];
+        const nodes = document.querySelectorAll(
+          'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="menuitem"]'
+        );
+        for (const el of Array.from(nodes)) {
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          const tag = el.tagName.toLowerCase();
+          const input = el as HTMLInputElement;
+          const labelText =
+            el.getAttribute("aria-label") ||
+            (input.labels && input.labels[0]?.textContent?.trim()) ||
+            "";
+          const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 80);
+          out.push({
+            tag,
+            id: el.id || "",
+            type: el.getAttribute("type") || "",
+            role: el.getAttribute("role") || "",
+            name: labelText || text,
+            text,
+            value: "value" in el ? String(input.value).slice(0, 40) : "",
+            placeholder: el.getAttribute("placeholder") || "",
+            required: input.required === true,
+            disabled:
+              input.disabled === true ||
+              el.getAttribute("aria-disabled") === "true",
+            options:
+              tag === "select"
+                ? Array.from((el as HTMLSelectElement).options)
+                    .map((o) => o.value)
+                    .slice(0, 20)
+                : undefined,
+          });
+          if (out.length >= 80) break;
+        }
+        return out;
+      });
+
+      visibleText = await (page as any).evaluate(() => {
+        return document.body.innerText.replace(/\n{3,}/g, "\n\n").slice(0, 4000);
+      });
+
+      openDialogs = await (page as any).evaluate(() => {
+        const isVisible = (el: Element): boolean => {
+          const style = window.getComputedStyle(el);
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            rect.width > 0 &&
+            rect.height > 0
+          );
+        };
+        const selectorFor = (el: Element): string | null => {
+          if ((el as HTMLElement).id) return `#${(el as HTMLElement).id}`;
+          const role =
+            el.getAttribute("role") ||
+            (el.tagName.toLowerCase() === "button" ? "button" : "");
+          const name =
+            el.getAttribute("aria-label") ||
+            (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 80);
+          if (role && name) return `role=${role}[name="${name.replace(/"/g, '\\"')}" i]`;
+          return null;
+        };
+
+        const modalNodes = Array.from(
+          document.querySelectorAll(
+            'dialog[open], [role="dialog"], [aria-modal="true"], .modal.is-open, .modal-backdrop.is-open, [data-modal-open="true"]'
+          )
+        ).filter(isVisible);
+
+        return modalNodes.slice(0, 3).map((dialog) => {
+          const title =
+            dialog.querySelector("h1,h2,h3,[id$='title'],[data-dialog-title]")?.textContent
+              ?.trim()
+              .replace(/\s+/g, " ") || undefined;
+          const actions = Array.from(
+            dialog.querySelectorAll("button, a[href], input[type='button'], input[type='submit'], [role='button']")
+          )
+            .filter(isVisible)
+            .map((el) => ({
+              name:
+                el.getAttribute("aria-label") ||
+                (el.textContent || (el as HTMLInputElement).value || "")
+                  .trim()
+                  .replace(/\s+/g, " "),
+              selector: selectorFor(el),
+            }))
+            .filter((action): action is { name: string; selector: string | null } => Boolean(action.name));
+
+          return {
+            title,
+            text: (dialog as HTMLElement).innerText.replace(/\n{3,}/g, "\n\n").slice(0, 1800),
+            actions: actions.map((action) => action.name).slice(0, 20),
+            selectors: actions
+              .map((action) => action.selector)
+              .filter((selector): selector is string => Boolean(selector))
+              .slice(0, 20),
+          };
+        });
+      });
+
+      for (const el of elements) {
+        const selector = deriveSelector(el);
+        const role = implicitRole(el);
+        const optionsSuffix = el.options ? ` options: [${el.options.join(", ")}]` : "";
+        const disabledSuffix = el.disabled ? " disabled" : "";
+        axTree.push({
+          role,
+          name: el.name || el.placeholder,
+          tag: el.tag,
+          value: [el.value, optionsSuffix.trim(), disabledSuffix.trim()].filter(Boolean).join(" "),
+          interactive: true,
+          depth: 0,
+          selector: selector ?? undefined,
+        });
+        if (selector && !selectors.includes(selector)) {
+          selectors.push(selector);
+        }
+        const isFormField =
+          el.tag === "input" || el.tag === "select" || el.tag === "textarea";
+        if (isFormField && selector) {
+          formFields.push({
+            selector,
+            name: el.name || el.id,
+            type: el.tag === "select" ? "select" : el.type || "text",
+            value: el.options ? `${el.value}${optionsSuffix}` : el.value,
+            placeholder: el.placeholder || undefined,
+            required: el.required,
+          });
+        }
       }
     }
   } catch {
-    // Fallback: build a minimal page state without AX tree
+    // Fallback: build a minimal page state without element data
   }
 
   return {
@@ -236,140 +421,9 @@ async function serializePageState(
     axTree,
     selectors,
     formFields,
+    openDialogs: openDialogs.length > 0 ? openDialogs : undefined,
+    visibleText: visibleText || undefined,
   };
-}
-
-/**
- * Recursively extracts accessibility tree nodes, selectors, and form fields.
- */
-function extractAxTree(
-  node: Record<string, unknown>,
-  axTree: AccessibilityNode[],
-  selectors: string[],
-  formFields: FormField[],
-  depth: number
-): void {
-  const role = (node.role as string) || "";
-  const name = (node.name as string) || "";
-  const tag = (node.nodeLabel as string) || "";
-  const value = (node.valueObject as Record<string, unknown>)?.value as string | undefined;
-  const children = node.children as Record<string, unknown>[] | undefined;
-
-  const axNode: AccessibilityNode = {
-    role,
-    name,
-    tag,
-    value,
-    interactive: isInteractiveRole(role),
-    depth,
-  };
-
-  // Try to extract a selector from the node
-  const childSelector = extractSelector(node);
-  if (childSelector) {
-    axNode.selector = childSelector;
-    if (!selectors.includes(childSelector)) {
-      selectors.push(childSelector);
-    }
-  }
-
-  // Extract form fields
-  if (isFormFieldRole(role) || isFormFieldTag(tag)) {
-    formFields.push({
-      selector: childSelector || `[role="${role}"]`,
-      name: name || "",
-      type: role,
-      value: value || "",
-      placeholder: (node.placeholder as string) || "",
-      required: isRequiredRole(role),
-    });
-  }
-
-  axTree.push(axNode);
-
-  if (children) {
-    for (const child of children) {
-      extractAxTree(child, axTree, selectors, formFields, depth + 1);
-    }
-  }
-}
-
-/**
- * Checks if a role indicates an interactive element.
- */
-function isInteractiveRole(role: string): boolean {
-  const interactiveRoles = new Set([
-    "button", "link", "textbox", "checkbox", "radio", "combobox",
-    "menuitem", "option", "tab", "switch", "slider", "spinbutton",
-    "searchbox", "listbox", "treeitem", "gridcell", "cell", "row",
-    "columnheader", "rowheader", "menu", "list", "tree", "tablist",
-    "toolbar", "navigation", "main", "contentinfo", "banner",
-  ]);
-  return interactiveRoles.has(role);
-}
-
-/**
- * Checks if a role is a form field.
- */
-function isFormFieldRole(role: string): boolean {
-  const formRoles = new Set([
-    "textbox", "combobox", "listbox", "spinbutton", "slider",
-    "checkbox", "radio", "switch",
-  ]);
-  return formRoles.has(role);
-}
-
-/**
- * Checks if a tag indicates a form field.
- */
-function isFormFieldTag(tag: string): boolean {
-  const formTags = new Set(["input", "select", "textarea"]);
-  return formTags.has(tag.toLowerCase());
-}
-
-/**
- * Checks if a role indicates a required field.
- */
-function isRequiredRole(role: string): boolean {
-  const requiredRoles = new Set(["textbox", "checkbox", "radio", "combobox", "listbox", "spinbutton"]);
-  return requiredRoles.has(role);
-}
-
-/**
- * Extracts a CSS selector from an accessibility node.
- */
-function extractSelector(node: Record<string, unknown>): string | null {
-  // Try to get the element's CSS selector from the snapshot
-  const domRef = node.domElement as string;
-  if (domRef) {
-    // domElement contains the serialized element, extract tag/role
-    const tagMatch = domRef.match(/<(\w+)/);
-    if (tagMatch) {
-      const tag = tagMatch[1];
-      const role = (node.role as string) || "";
-      const name = (node.name as string) || "";
-
-      if (role && name) {
-        // Use role+name selector
-        const escapedName = name.replace(/"/g, '\\"');
-        return `[role="${role}"][name="${escapedName}"]`;
-      }
-      if (role) {
-        return `[role="${role}"]`;
-      }
-      return tag;
-    }
-  }
-
-  // Fallback: try to get a text-based selector
-  const text = (node.name as string) || "";
-  if (text) {
-    const tag = (node.nodeLabel as string) || "span";
-    const escapedText = text.replace(/"/g, '\\"');
-    return `${tag}:has-text("${escapedText}")`;
-  }
-
-  return null;
 }
 
 // ─── LLM Request Builder ─────────────────────────────────────────────────────
@@ -391,13 +445,34 @@ function buildLlmMessages(
   userMessages.push("");
 
   if (pageState.axTree.length > 0) {
-    userMessages.push("## Accessibility Tree");
+    userMessages.push("## Interactive Elements (selector in [brackets] — use it verbatim)");
     for (const node of pageState.axTree) {
       const indent = "  ".repeat(node.depth);
       const selector = node.selector ? ` [${node.selector}]` : "";
       const value = node.value ? ` (value: "${node.value}")` : "";
       userMessages.push(`${indent}- ${node.tag || "?"} [${node.role}]${selector}: "${node.name}"${value}`);
     }
+    userMessages.push("");
+  }
+
+  if (pageState.visibleText) {
+    userMessages.push("## Visible Page Text (truncated)");
+    userMessages.push(pageState.visibleText);
+    userMessages.push("");
+  }
+
+  if (pageState.openDialogs && pageState.openDialogs.length > 0) {
+    userMessages.push("## Open Dialogs / Modals");
+    for (const dialog of pageState.openDialogs) {
+      userMessages.push(`- ${dialog.title || "Dialog"}: ${dialog.text}`);
+      if (dialog.actions.length > 0) {
+        userMessages.push(`  Actions: ${dialog.actions.join(", ")}`);
+      }
+      if (dialog.selectors.length > 0) {
+        userMessages.push(`  Action selectors: ${dialog.selectors.join(", ")}`);
+      }
+    }
+    userMessages.push("Do not return `done` while a dialog still contains actions needed by the goal.");
     userMessages.push("");
   }
 
@@ -436,11 +511,205 @@ function buildLlmMessages(
 
 // ─── Action Executor ─────────────────────────────────────────────────────────
 
+function narrationText(action: LlmActionResponse): string {
+  const params = action.params as Record<string, unknown> | undefined;
+  for (const value of [
+    action.narration,
+    params?.narration,
+    params?.text,
+    params?.content,
+    params?.value,
+  ]) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function actionText(action: LlmActionResponse): string {
+  const params = action.params as Record<string, unknown> | undefined;
+  return [
+    params?.selector,
+    params?.text,
+    params?.value,
+    action.notes,
+    action.narration,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+}
+
+type ClickObservationKind = "content" | "dialog-open" | "dialog-submit";
+
+function clickObservationKind(action: LlmActionResponse): ClickObservationKind | null {
+  if (action.action !== "click") return null;
+  const text = actionText(action);
+  if (/\b(send|submit|confirm)\b|submit\b|#.*submit/i.test(text)) {
+    return "dialog-submit";
+  }
+  if (/\b(report|modal|dialog|approve|block \+ report|apply \+ report)\b/i.test(text)) {
+    return "dialog-open";
+  }
+  if (/\b(recommendation|whois|analysis|inspect|logs?|details?|open|show|expand)\b/i.test(text)) {
+    return "content";
+  }
+  return null;
+}
+
+function goalNeedsDialogCompletion(goal: string): boolean {
+  return (
+    /\b(modal|dialog|report|abuse|send|submit|approve|confirm|block|apply)\b/i.test(goal) &&
+    /\b(send|submit|approve|confirm|report|block|apply)\b/i.test(goal)
+  );
+}
+
+function prematureDoneReason(goal: string, pageState: PageState): string | null {
+  if (!goalNeedsDialogCompletion(goal)) return null;
+  const dialog = pageState.openDialogs?.[0];
+  if (!dialog) return null;
+
+  const actionSummary = dialog.actions.length > 0
+    ? ` Available modal actions: ${dialog.actions.join(", ")}.`
+    : "";
+  return `modal/dialog is still open${dialog.title ? ` (${dialog.title})` : ""}; complete the requested modal action before done.${actionSummary}`;
+}
+
+async function settleAfterClick(
+  browser: BrowserSession,
+  action: LlmActionResponse
+): Promise<string | undefined> {
+  const kind = clickObservationKind(action);
+  const page = browser.page as any;
+  if (!kind || !page) return undefined;
+
+  if (typeof page.waitForTimeout === "function") {
+    await page.waitForTimeout(350).catch(() => {});
+  }
+
+  if (typeof page.waitForFunction === "function") {
+    await page.waitForFunction(
+      (expectedKind: ClickObservationKind) => {
+        const isVisible = (el: Element): boolean => {
+          const style = window.getComputedStyle(el);
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            rect.width > 0 &&
+            rect.height > 0
+          );
+        };
+        const openDialog = Array.from(
+          document.querySelectorAll(
+            'dialog[open], [role="dialog"], [aria-modal="true"], .modal.is-open, .modal-backdrop.is-open, [data-modal-open="true"]'
+          )
+        ).find(isVisible);
+        const visibleLoaders = Array.from(
+          document.querySelectorAll(".loading, .compact-loading, .loading-inline, [aria-busy='true']")
+        ).filter(isVisible);
+
+        if (expectedKind === "dialog-open" || expectedKind === "dialog-submit") {
+          if (!openDialog) {
+            return expectedKind === "dialog-submit" && visibleLoaders.length === 0;
+          }
+          const text = (openDialog as HTMLElement).innerText.toLowerCase();
+          if (/\bsending\b|\bloading\b/.test(text)) return false;
+          const readyAction = Array.from(
+            openDialog.querySelectorAll("button, input[type='button'], input[type='submit'], [role='button']")
+          )
+            .filter(isVisible)
+            .some((el) => {
+              const button = el as HTMLButtonElement;
+              const label = (
+                el.getAttribute("aria-label") ||
+                el.textContent ||
+                (el as HTMLInputElement).value ||
+                ""
+              ).trim();
+              return (
+                !button.disabled &&
+                el.getAttribute("aria-disabled") !== "true" &&
+                /\b(send|submit|report|approve|confirm|again)\b/i.test(label)
+              );
+            });
+          return readyAction || visibleLoaders.length === 0;
+        }
+
+        return visibleLoaders.length === 0;
+      },
+      kind,
+      { timeout: kind === "content" ? 6000 : 8000 }
+    ).catch(() => {});
+  }
+
+  const scrolled = typeof page.evaluate === "function" ? await page.evaluate((label: string) => {
+    const isVisible = (el: Element): boolean => {
+      const style = window.getComputedStyle(el);
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    };
+
+    const lower = label.toLowerCase();
+    const candidateSelectors: string[] = [
+      'dialog[open]',
+      '[role="dialog"]',
+      '[aria-modal="true"]',
+      ".modal-backdrop.is-open .modal-dialog",
+    ];
+    if (lower.includes("whois")) {
+      candidateSelectors.push("[id^='whois-']", ".whois-panel", ".whois-abuse");
+    }
+    if (lower.includes("recommendation")) {
+      candidateSelectors.push("[id^='recommendation-']", ".recommendation");
+    }
+    if (lower.includes("inspect") || lower.includes("analysis") || lower.includes("log")) {
+      candidateSelectors.push("[id^='ai-inspect-']", ".ai-inspect-panel", ".ai-inspect-text");
+    }
+
+    const candidates = candidateSelectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter(isVisible);
+    const target = candidates[candidates.length - 1] as HTMLElement | undefined;
+    if (!target) return "";
+    target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    return target.id || String(target.className || "") || target.tagName.toLowerCase();
+  }, actionText(action)).catch(() => "") : "";
+
+  if (typeof page.waitForTimeout === "function") {
+    await page.waitForTimeout(kind === "content" ? 1200 : 900).catch(() => {});
+  }
+  const label = kind === "content" ? "content" : "dialog";
+  return scrolled ? `; paused on ${label} content` : `; paused for ${label} content`;
+}
+
 /**
  * Executes an action on the browser based on the LLM response.
  * Returns a result string describing what happened.
+ *
+ * Browser action calls commonly fail (e.g. selector not found); failures are
+ * returned as an error result so the exploration loop records them and continues.
  */
 async function executeAction(
+  browser: BrowserSession,
+  action: LlmActionResponse
+): Promise<{ result: string; error?: string }> {
+  try {
+    return await executeActionUnsafe(browser, action);
+  } catch (err) {
+    return {
+      result: "failed",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function executeActionUnsafe(
   browser: BrowserSession,
   action: LlmActionResponse
 ): Promise<{ result: string; error?: string }> {
@@ -462,7 +731,8 @@ async function executeAction(
         return { result: "skipped", error: "click requires selector parameter" };
       }
       await browser.click(selector);
-      return { result: `clicked ${selector}` };
+      const observation = await settleAfterClick(browser, action);
+      return { result: `clicked ${selector}${observation ?? ""}` };
     }
 
     case "hover": {
@@ -526,7 +796,7 @@ async function executeAction(
     }
 
     case "narrate": {
-      const narration = action.narration || (params?.narration as string) || "";
+      const narration = narrationText(action);
       if (!narration) {
         return { result: "skipped", error: "narrate requires narration text" };
       }
@@ -629,8 +899,23 @@ export class ExplorerAgent {
       // Navigate to starting URL
       await browser.goto(this.config.url);
 
+      // Total turn budget: blocked/invalid/errored turns don't count toward
+      // maxSteps, so cap total turns to avoid an unbounded loop against a
+      // misbehaving LLM.
+      const maxTurns = this.config.maxSteps * 3;
+
       // Main exploration loop
       while (this.actionCount < this.config.maxSteps) {
+        // Check turn budget
+        if (this.transcript.totalTurns >= maxTurns) {
+          this.report({
+            type: "budget_exceeded",
+            message: `Turn budget exhausted: ${this.transcript.totalTurns} turns (max ${maxTurns}) with only ${this.actionCount} productive actions`,
+          });
+          this.transcript.stopReason = "max_turns";
+          break;
+        }
+
         // Check time budget
         const timeStatus = this.guardrails.checkTimeBudget();
         if (timeStatus.exceeded) {
@@ -732,7 +1017,6 @@ export class ExplorerAgent {
         }
 
         // Check guardrails
-        const currentPageUrl = pageState.url;
         const guardrailBlockReason = this.guardrails.checkAction(llmResponse).reason;
 
         if (guardrailBlockReason) {
@@ -769,6 +1053,48 @@ export class ExplorerAgent {
           continue;
         }
 
+        if (llmResponse.action === "done") {
+          const doneBlockReason = prematureDoneReason(this.config.goal, pageState);
+          if (doneBlockReason) {
+            this.report({
+              type: "action_blocked",
+              turn: turnNumber,
+              action: llmResponse.action,
+              actionParams: llmResponse.params,
+              blocked: true,
+              blockReason: doneBlockReason,
+            });
+
+            this.guardrails.addTranscriptEntry({
+              turn: turnNumber,
+              action: llmResponse.action,
+              params: llmResponse.params,
+              blocked: true,
+              blockReason: doneBlockReason,
+            });
+
+            this.llmHistory.push({
+              role: "assistant",
+              content: `done blocked: ${doneBlockReason}`,
+            });
+
+            this.transcript.turns.push({
+              turn: turnNumber,
+              startTime: turnStart,
+              pageState,
+              systemPrompt,
+              llmRequest: messages,
+              llmResponse,
+              selectedAction: llmResponse,
+              blocked: true,
+              blockReason: doneBlockReason,
+            });
+            this.transcript.totalTurns++;
+            this.transcript.blockedTurns++;
+            continue;
+          }
+        }
+
         // Execute action
         const { result, error } = await executeAction(browser, llmResponse);
 
@@ -801,8 +1127,9 @@ export class ExplorerAgent {
         // Record successful action
         this.actionCount++;
         this.guardrails.recordStep();
-        const entryParams = llmResponse.action === "narrate" && llmResponse.narration
-          ? { ...llmResponse.params, narration: llmResponse.narration }
+        const narration = llmResponse.action === "narrate" ? narrationText(llmResponse) : "";
+        const entryParams = llmResponse.action === "narrate" && narration
+          ? { ...llmResponse.params, narration }
           : llmResponse.params;
         this.guardrails.addTranscriptEntry({
           turn: turnNumber,
@@ -881,7 +1208,8 @@ export class ExplorerAgent {
       // Assemble script
       const assembly = this.guardrails.assembleScript(
         this.config.scriptTemplate.title,
-        this.config.scriptTemplate.narration_mode
+        this.config.scriptTemplate.narration_mode,
+        { url: this.config.url, viewport: this.config.viewport }
       );
       this.transcript.assembly = {
         script: assembly.script,
@@ -964,7 +1292,13 @@ export class ExplorerAgent {
       } else if (action.action === "goto") {
         const url = action.params?.url as string;
         if (url) {
-          const label = new URL(url).hostname.replace("www.", "");
+          let label: string;
+          try {
+            label = new URL(url).hostname.replace("www.", "");
+          } catch {
+            // Malformed or relative URL — fall back to the raw string
+            label = url;
+          }
           currentFlow.push(label);
         }
       } else if (action.action === "done") {

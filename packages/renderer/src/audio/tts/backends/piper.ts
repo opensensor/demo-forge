@@ -8,19 +8,34 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { TtsBackend, BackendSynthesizeOptions, SynthesisResult, AudioFormat } from '../types.js';
 
 // Default Piper voice model (English — en_US-lessac-medium)
 const DEFAULT_PIPER_VOICE = 'en_US-lessac-medium';
 
+// ESM equivalent of __dirname
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+/** Locate a binary by scanning the directories in process.env.PATH. */
+function findInPath(binary: string): string | null {
+  const envPath = process.env.PATH ?? '';
+  for (const dir of envPath.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, binary);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export class PiperBackend implements TtsBackend {
   private modelPath?: string;
-  private format: AudioFormat;
 
   constructor(options?: { modelPath?: string; format?: AudioFormat }) {
     this.modelPath = options?.modelPath;
-    this.format = options?.format ?? 'wav';
   }
 
   getName(): string {
@@ -39,7 +54,7 @@ export class PiperBackend implements TtsBackend {
     return modelFile ? fs.existsSync(modelFile) : false;
   }
 
-  async synthesize(text: string, options?: BackendSynthesizeOptions): Promise<SynthesisResult> {
+  async synthesize(text: string, _options?: BackendSynthesizeOptions): Promise<SynthesisResult> {
     if (!text) {
       return { audio: Buffer.alloc(0), durationMs: 0, text: '' };
     }
@@ -65,7 +80,8 @@ export class PiperBackend implements TtsBackend {
       {
         input: text,
         timeout: 30000,
-        encoding: 'utf-8',
+        // No encoding: stdout must stay a Buffer — PCM audio is binary and
+        // would be corrupted by utf-8 decoding.
       },
     );
 
@@ -74,11 +90,11 @@ export class PiperBackend implements TtsBackend {
     }
 
     if (result.status !== 0) {
-      const stderr = result.stderr?.toString() || 'unknown error';
+      const stderr = result.stderr?.toString('utf-8') || 'unknown error';
       throw new Error(`Piper exited with code ${result.status}: ${stderr}`);
     }
 
-    const audio = Buffer.from(result.stdout as Buffer | string);
+    const audio: Buffer = result.stdout ?? Buffer.alloc(0);
     // Piper produces ~22050 Hz mono 16-bit PCM WAV
     // Duration = (audio.length - 44) / (22050 * 2) seconds (subtract WAV header)
     const durationMs = Math.max(0, Math.round((audio.length - 44) / (22050 * 2) * 1000));
@@ -87,15 +103,15 @@ export class PiperBackend implements TtsBackend {
   }
 
   private resolvePiperBinary(): string | null {
-    // Try common locations
+    // Try PATH first, then vendored and common install locations
     const candidates = [
-      'piper', // in PATH
-      path.join(__dirname, '..', '..', 'vendor', 'piper', 'piper'),
+      findInPath('piper'),
+      path.join(MODULE_DIR, '..', '..', 'vendor', 'piper', 'piper'),
       '/usr/local/bin/piper',
     ];
 
     for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
+      if (candidate && fs.existsSync(candidate)) {
         return candidate;
       }
     }
@@ -110,8 +126,8 @@ export class PiperBackend implements TtsBackend {
 
     // Try to find model in default locations
     const modelCandidates = [
-      path.join(__dirname, '..', '..', 'vendor', 'piper', 'voices', `${DEFAULT_PIPER_VOICE}.onnx`),
-      path.join(__dirname, '..', '..', 'vendor', 'piper', 'voices', `${DEFAULT_PIPER_VOICE}.onnx.json`),
+      path.join(MODULE_DIR, '..', '..', 'vendor', 'piper', 'voices', `${DEFAULT_PIPER_VOICE}.onnx`),
+      path.join(MODULE_DIR, '..', '..', 'vendor', 'piper', 'voices', `${DEFAULT_PIPER_VOICE}.onnx.json`),
       `/usr/local/share/piper/voices/${DEFAULT_PIPER_VOICE}.onnx`,
     ];
 

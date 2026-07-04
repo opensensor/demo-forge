@@ -19,7 +19,6 @@ import {
 } from "@demoforge/test-utils";
 import { LlmClient, TokenCounter, plannerConfig, copywriterConfig } from "./client.js";
 import {
-  DemoForgeError,
   LlmUnavailableError,
   LlmTimeoutError,
   LlmApiError,
@@ -78,6 +77,36 @@ describe("LlmClient", () => {
       });
       const lastRequest = server.requestLog[server.requestLog.length - 1];
       expect(lastRequest.model).toBe("llama3.1");
+    });
+
+    it("omits model when none is configured", async () => {
+      const originalFetch = globalThis.fetch;
+      let requestBody: Record<string, unknown> | undefined;
+      globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        requestBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-no-model",
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: "server-default",
+            choices: [{ index: 0, message: { role: "assistant", content: "OK" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+
+      try {
+        const client = new LlmClient({ baseURL: "http://localhost:9999" });
+        await client.sendRequest({
+          messages: [{ role: "user", content: "Hello" }],
+        });
+        expect(requestBody).toBeDefined();
+        expect(requestBody).not.toHaveProperty("model");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
 
     it("includes API key in Authorization header", async () => {
@@ -337,7 +366,9 @@ describe("Retry with exponential backoff", () => {
 describe("Timeout", () => {
   it("throws LlmTimeoutError when request exceeds timeout", async () => {
     const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
     globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      fetchCalls++;
       const signal = init?.signal as AbortSignal | undefined;
       return new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -368,7 +399,9 @@ describe("Timeout", () => {
       const client = new LlmClient({ baseURL: "http://localhost:9999", timeout: 100 });
       await expect(
         client.sendRequest({ messages: [{ role: "user", content: "Hello" }] })
-      ).rejects.toBeInstanceOf(DemoForgeError);
+      ).rejects.toBeInstanceOf(LlmTimeoutError);
+      // Timeouts must not be retried
+      expect(fetchCalls).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
     }

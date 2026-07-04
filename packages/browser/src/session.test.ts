@@ -17,18 +17,18 @@ describe('resolveSelector', () => {
     expect(resolveSelector("//button[@type='submit']")).toBe("//button[@type='submit']");
   });
 
-  it('passes through css: prefixed selectors', () => {
-    expect(resolveSelector('css:.my-class')).toBe('css:.my-class');
+  it('maps css: prefixed selectors to the css= engine', () => {
+    expect(resolveSelector('css:.my-class')).toBe('css=.my-class');
   });
 
-  it('passes through xpath: prefixed selectors', () => {
-    expect(resolveSelector('xpath://button')).toBe('xpath://button');
+  it('maps xpath: prefixed selectors to the xpath= engine', () => {
+    expect(resolveSelector('xpath://button')).toBe('xpath=//button');
   });
 
-  it('converts role selector to CSS', () => {
-    expect(resolveSelector({ role: 'button' })).toBe('[role="button"]');
+  it('converts role selector to the Playwright role engine', () => {
+    expect(resolveSelector({ role: 'button' })).toBe('role=button');
     expect(resolveSelector({ role: 'link', name: 'Click me' })).toBe(
-      '[role="link"][name="Click me"]',
+      'role=link[name="Click me" i]',
     );
   });
 
@@ -84,6 +84,25 @@ describe('BrowserSession', () => {
         cdpEndpoint: 'ws://localhost:9222',
       });
       expect(s.isRunning).toBe(false);
+    });
+
+    it('rejects headed launch when host display use is forbidden', async () => {
+      const s = new BrowserSession({
+        headless: false,
+        headed: true,
+        forbidHostDisplay: true,
+      });
+      await expect(s.launch()).rejects.toThrow('Host display use is forbidden');
+    });
+
+    it('rejects external CDP connection when host display use is forbidden', async () => {
+      const s = new BrowserSession({
+        headless: true,
+        headed: false,
+        cdpEndpoint: 'ws://localhost:9222',
+        forbidHostDisplay: true,
+      });
+      await expect(s.launch()).rejects.toThrow('external CDP browsers');
     });
   });
 

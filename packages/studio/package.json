@@ -1,0 +1,32 @@
+{
+  "name": "@demoforge/studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DemoForge Studio — web UI for crafting AI-driven demos from stated objectives",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "watch": "tsc --build --watch"
+  },
+  "dependencies": {
+    "@demoforge/browser": "1.0.0",
+    "@demoforge/core": "1.0.0",
+    "@demoforge/renderer": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.9.0"
+  },
+  "license": "GPL-3.0-only"
+}

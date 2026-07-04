@@ -6,15 +6,14 @@
  */
 
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 import { CapturePipeline } from './capture-pipeline.js';
 import type {
   CapturePipelineConfig,
-  EncodingOptions,
   Mp4EncodingOptions,
   WebmEncodingOptions,
   GifEncodingOptions,
@@ -26,6 +25,15 @@ import type {
 } from './types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Check whether a binary is available on this machine. */
+function binaryAvailable(binary: string): boolean {
+  const result = spawnSync(binary, ['-version'], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+// Skip the whole suite on machines without ffmpeg/ffprobe instead of crashing
+const hasFfmpeg = binaryAvailable('ffmpeg') && binaryAvailable('ffprobe');
 
 /** Create a minimal valid WebM test video using ffmpeg. */
 async function createTestWebm(tmpDir: string): Promise<string> {
@@ -43,6 +51,7 @@ async function createTestWebm(tmpDir: string): Promise<string> {
     input,
   ], { stdio: ['ignore', 'ignore', 'ignore'] });
   await new Promise<void>((resolve, reject) => {
+    p.on('error', (err) => reject(new Error(`ffmpeg spawn failed: ${err.message}`)));
     p.on('close', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg test video creation failed with code ${code}`));
@@ -64,6 +73,7 @@ async function createTestMp4(tmpDir: string): Promise<string> {
     input,
   ], { stdio: ['ignore', 'ignore', 'ignore'] });
   await new Promise<void>((resolve, reject) => {
+    p.on('error', (err) => reject(new Error(`ffmpeg spawn failed: ${err.message}`)));
     p.on('close', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg test MP4 creation failed with code ${code}`));
@@ -94,7 +104,7 @@ function assertMetadata(result: CaptureResult, expectedFormat: string): OutputMe
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('CapturePipeline', () => {
+describe.skipIf(!hasFfmpeg)('CapturePipeline', () => {
   let tmpDir: string;
   let testWebm: string;
   let testMp4: string;
@@ -492,6 +502,7 @@ describe('CapturePipeline', () => {
       p.stdout?.on('data', (d) => { stdout += d; });
 
       await new Promise<void>((resolve, reject) => {
+        p.on('error', (err) => reject(new Error(`ffprobe spawn failed: ${err.message}`)));
         p.on('close', (code) => {
           if (code === 0) resolve();
           else reject(new Error(`ffprobe failed with code ${code}`));
@@ -525,6 +536,7 @@ describe('CapturePipeline', () => {
       p.stdout?.on('data', (d) => { stdout += d; });
 
       await new Promise<void>((resolve, reject) => {
+        p.on('error', (err) => reject(new Error(`ffprobe spawn failed: ${err.message}`)));
         p.on('close', (code) => {
           if (code === 0) resolve();
           else reject(new Error(`ffprobe failed with code ${code}`));
@@ -544,7 +556,6 @@ describe('CapturePipeline', () => {
 
       const m = (result as CaptureResult).metadata;
       // GIFs start with GIF89a or GIF87a header
-      const header = await readFile(m.outputPath, { encoding: 'utf8', flag: 'r' }).catch(() => '');
       // Read as buffer for binary check
       const buf = await readFile(m.outputPath);
       const gifHeader = buf.slice(0, 6).toString('ascii');
@@ -564,5 +575,72 @@ describe('CapturePipeline', () => {
       expect(buf.slice(0, 4).toString('ascii')).toBe('RIFF');
       expect(buf.slice(8, 12).toString('ascii')).toBe('WEBP');
     });
+  });
+});
+
+describe('CapturePipeline ffmpeg argument construction', () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'demoforge-capture-args-'));
+  });
+
+  afterAll(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('puts output-specific MP4 options before the output file and caps threads', async () => {
+    const argsPath = join(tmpDir, 'ffmpeg-args.json');
+    const inputPath = join(tmpDir, 'input.webm');
+    const outputPath = join(tmpDir, 'output.mp4');
+    const fakeFfmpegPath = join(tmpDir, 'fake-ffmpeg.mjs');
+    const fakeFfprobePath = join(tmpDir, 'fake-ffprobe.mjs');
+
+    await writeFile(inputPath, 'fake input');
+    await writeFile(
+      fakeFfmpegPath,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));
+writeFileSync(args.at(-1), 'fake output');
+`,
+    );
+    await writeFile(
+      fakeFfprobePath,
+      `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({
+  streams: [{ width: 640, height: 360, r_frame_rate: '24/1' }],
+  format: { duration: '1.0' },
+}));
+`,
+    );
+    await chmod(fakeFfmpegPath, 0o755);
+    await chmod(fakeFfprobePath, 0o755);
+
+    const pipeline = new CapturePipeline({
+      tmpDir,
+      ffmpegPath: fakeFfmpegPath,
+      ffprobePath: fakeFfprobePath,
+    });
+    const result = await pipeline.encode(inputPath, {
+      format: 'mp4',
+      width: 640,
+      height: 360,
+      fps: 24,
+      quality: 'small',
+      threads: 2,
+      outputPath,
+    });
+
+    expect(result.success).toBe(true);
+    const args = JSON.parse(await readFile(argsPath, 'utf-8')) as string[];
+    expect(args.at(-1)).toBe(outputPath);
+    expect(args).toContain('-nostdin');
+    expect(args).toContain('-threads');
+    expect(args[args.indexOf('-threads') + 1]).toBe('2');
+    expect(args.indexOf('-preset')).toBeGreaterThan(-1);
+    expect(args.indexOf('-preset')).toBeLessThan(args.length - 1);
+    expect(args.indexOf(outputPath)).toBe(args.length - 1);
   });
 });

@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  testDir: "./test/e2e",
+  testDir: "./e2e",
   testMatch: /.*\.spec\.ts/,
   timeout: 60000,
   expect: { timeout: 10000 },
@@ -21,10 +25,11 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {
-    command: "npx http-server test/fixtures/mock-web-app -p 3000 -c-1 --cors",
-    port: 3000,
-    timeout: 120000,
-    reuseExisting: false,
+    command: "node mocks/mock-web-server.mjs",
+    cwd: __dirname,
+    url: "http://localhost:3000",
+    timeout: 30000,
+    reuseExistingServer: !process.env.CI,
     stdout: "pipe",
     stderr: "pipe",
   },

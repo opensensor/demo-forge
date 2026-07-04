@@ -124,9 +124,9 @@ export class CapturePipeline {
     options: Mp4EncodingOptions,
   ): Promise<CaptureResultUnion> {
     const preset = this._getPreset(options);
-    const outputPath = join(this._tmpDir, `output_${Date.now()}.mp4`);
+    const outputPath = options.outputPath ?? join(this._tmpDir, `output_${Date.now()}.mp4`);
 
-    const args = this._buildCommonArgs(inputPath, options, outputPath);
+    const args = this._buildCommonArgs(inputPath, options);
     args.push('-c:v', 'libx264');
     args.push('-crf', String(preset.crf));
     args.push('-preset', preset.x264Preset);
@@ -141,6 +141,7 @@ export class CapturePipeline {
 
     // Copy audio if present
     args.push('-c:a', 'aac', '-b:a', '128k');
+    args.push(outputPath);
 
     const result = await this._runFfmpeg(args, outputPath);
     if (!result.success) return result;
@@ -171,9 +172,9 @@ export class CapturePipeline {
     const preset = this._getPreset(options);
     const codec = options.codec ?? 'vp9';
     const ext = codec === 'av1' ? 'webm' : 'webm';
-    const outputPath = join(this._tmpDir, `output_${Date.now()}.${ext}`);
+    const outputPath = options.outputPath ?? join(this._tmpDir, `output_${Date.now()}.${ext}`);
 
-    const args = this._buildCommonArgs(inputPath, options, outputPath);
+    const args = this._buildCommonArgs(inputPath, options);
 
     if (codec === 'vp9') {
       args.push('-c:v', 'libvpx-vp9');
@@ -187,6 +188,7 @@ export class CapturePipeline {
 
     // Copy audio if present
     args.push('-c:a', 'libvorbis');
+    args.push(outputPath);
 
     const result = await this._runFfmpeg(args, outputPath);
     if (!result.success) return result;
@@ -214,9 +216,8 @@ export class CapturePipeline {
     inputPath: string,
     options: GifEncodingOptions,
   ): Promise<CaptureResultUnion> {
-    const preset = this._getPreset(options);
     const maxSizeBytes = options.maxSizeBytes ?? 5 * 1024 * 1024; // 5 MB default
-    const outputPath = join(this._tmpDir, `output_${Date.now()}.gif`);
+    const outputPath = options.outputPath ?? join(this._tmpDir, `output_${Date.now()}.gif`);
     const targetFps = options.fps ?? 10;
     const needsScale = options.width !== undefined || options.height !== undefined;
 
@@ -239,12 +240,13 @@ export class CapturePipeline {
 
     const gifArgs: string[] = [
       '-y',
+      '-nostdin',
       '-i', inputPath,
       '-filter_complex', filterComplex,
-      '-frames:v', String(preset.paletteMaxFrames),
       '-loop', '0',
-      outputPath,
     ];
+    this._appendThreadLimit(gifArgs, options);
+    gifArgs.push(outputPath);
 
     const result = await this._runFfmpegWithCapture(gifArgs, outputPath);
 
@@ -259,15 +261,15 @@ export class CapturePipeline {
       warnings.push(
         `GIF size ${finalFileSize} bytes exceeds budget ${maxSizeBytes} bytes, auto-reducing quality...`,
       );
-      finalPath = await this._autoReduceGif(
+      const reducedPath = await this._autoReduceGif(
         inputPath,
         options,
-        preset,
         maxSizeBytes,
         warnings,
       );
-      if (finalPath) {
-        const reducedStat = await stat(finalPath).catch(() => null);
+      if (reducedPath) {
+        finalPath = reducedPath;
+        const reducedStat = await stat(reducedPath).catch(() => null);
         finalFileSize = reducedStat?.size ?? finalFileSize;
       } else {
         warnings.push('Could not auto-reduce GIF to meet size budget, keeping original');
@@ -300,16 +302,16 @@ export class CapturePipeline {
   /**
    * Auto-reduce GIF quality to meet size budget.
    * Reduces resolution and fps iteratively.
+   * Returns null if no attempt produced a GIF within the budget.
    */
   private async _autoReduceGif(
     inputPath: string,
     options: GifEncodingOptions,
-    preset: QualityPresetConfig,
     maxSizeBytes: number,
     warnings: string[],
-  ): Promise<string> {
+  ): Promise<string | null> {
     let scale = options.width ?? 320;
-    let height = options.height ?? 240;
+    const height = options.height ?? 240;
     let fps = options.fps ?? 10;
     let attempts = 0;
     const maxAttempts = 5;
@@ -329,12 +331,13 @@ export class CapturePipeline {
 
       const gifArgs: string[] = [
         '-y',
+        '-nostdin',
         '-i', inputPath,
         '-filter_complex', filterComplex,
-        '-frames:v', String(preset.paletteMaxFrames),
         '-loop', '0',
-        outputPath,
       ];
+      this._appendThreadLimit(gifArgs, options);
+      gifArgs.push(outputPath);
 
       const result = await this._runFfmpegWithCapture(gifArgs, outputPath);
 
@@ -348,7 +351,7 @@ export class CapturePipeline {
       }
     }
 
-    return join(this._tmpDir, `gif_failed_${Date.now()}.gif`);
+    return null;
   }
 
   // ─── Animated WebP Encoding ────────────────────────────────────────────
@@ -358,16 +361,17 @@ export class CapturePipeline {
     options: WebpEncodingOptions,
   ): Promise<CaptureResultUnion> {
     const preset = this._getPreset(options);
-    const outputPath = join(this._tmpDir, `output_${Date.now()}.webp`);
+    const outputPath = options.outputPath ?? join(this._tmpDir, `output_${Date.now()}.webp`);
 
     const loop = options.loop ?? 0;
 
-    const args = this._buildCommonArgs(inputPath, options, outputPath);
-    args.push('-c:v', 'libwebp-palette');
+    const args = this._buildCommonArgs(inputPath, options);
+    args.push('-c:v', 'libwebp');
     args.push('-lossless', '0');
     args.push('-quality', String(preset.webpQuality));
-    args.push('-compression', String(preset.webpCompression));
+    args.push('-compression_level', String(preset.webpCompression));
     args.push('-loop', String(loop));
+    args.push(outputPath);
 
     const result = await this._runFfmpeg(args, outputPath);
     if (!result.success) return result;
@@ -394,12 +398,14 @@ export class CapturePipeline {
   private _buildCommonArgs(
     inputPath: string,
     options: EncodingOptions,
-    outputPath: string,
   ): string[] {
     const args: string[] = [
       '-y', // Overwrite output
+      '-nostdin',
       '-i', inputPath,
     ];
+
+    this._appendThreadLimit(args, options);
 
     // Scale to target resolution
     if (options.width || options.height) {
@@ -413,11 +419,13 @@ export class CapturePipeline {
       args.push('-r', String(options.fps));
     }
 
-    // Timeout
-    args.push('-t', '300'); // 5 minute max
-
-    args.push(outputPath);
     return args;
+  }
+
+  private _appendThreadLimit(args: string[], options: EncodingOptions): void {
+    if (options.threads !== undefined && Number.isFinite(options.threads) && options.threads > 0) {
+      args.push('-threads', String(Math.floor(options.threads)));
+    }
   }
 
   // ─── FFmpeg Execution ──────────────────────────────────────────────────
@@ -457,11 +465,10 @@ export class CapturePipeline {
       });
 
       let stderr = '';
-      let stdout = '';
       const warnings: string[] = [];
 
-      process.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+      process.stdout?.on('data', () => {
+        // Drain stdout so the child process does not block; output is unused.
       });
 
       process.stderr?.on('data', (data: Buffer) => {
@@ -547,6 +554,7 @@ export class CapturePipeline {
     fps: number;
     frameCount: number;
   }> {
+    const probeTimeoutMs = 30000;
     const process = spawn(this._ffprobePath, [
       '-v', 'error',
       '-select_streams', 'v:0',
@@ -563,7 +571,18 @@ export class CapturePipeline {
     process.stderr?.on('data', (d: Buffer) => { stderr += d; });
 
     await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        process.kill('SIGKILL');
+        reject(new Error(`ffprobe timed out after ${probeTimeoutMs}ms probing ${filePath}`));
+      }, probeTimeoutMs);
+
+      process.on('error', (err) => {
+        clearTimeout(timer);
+        reject(new Error(`ffprobe process error: ${err.message}. Ensure ffprobe is installed and in PATH.`));
+      });
+
       process.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error(stderr || `ffprobe exited with code ${code}`));
       });

@@ -34,6 +34,17 @@ export interface BrowserLaunchOptions {
   timeout?: number;
   /** Whether to close the browser when the session ends. Default: true. */
   persistent?: boolean;
+  /**
+   * Enforce capture without touching the host display. When enabled, launch
+   * rejects headed browsers and external CDP connections.
+   */
+  forbidHostDisplay?: boolean;
+  /**
+   * Record a video of the session using Playwright's built-in recorder.
+   * The video file is finalized when the session is closed; read it from
+   * `BrowserSession.videoPath` after `close()` resolves.
+   */
+  recordVideo?: { dir: string; size?: { width: number; height: number } };
 }
 
 // ─── Selector Types ─────────────────────────────────────────────────────────
@@ -48,10 +59,10 @@ export function resolveSelector(selector: Selector): string {
       return selector;
     }
     if (selector.startsWith('css:')) {
-      return selector;
+      return `css=${selector.slice('css:'.length)}`;
     }
     if (selector.startsWith('xpath:')) {
-      return selector;
+      return `xpath=${selector.slice('xpath:'.length)}`;
     }
     // Check if it looks like a role selector
     if (selector.includes('[role=')) {
@@ -63,9 +74,13 @@ export function resolveSelector(selector: Selector): string {
 
   if ('role' in selector) {
     if (selector.name) {
-      return `[role="${selector.role}"][name="${selector.name}"]`;
+      const escapedName = selector.name.replace(/"/g, '\\"');
+      // The `i` flag makes name matching case-insensitive, mirroring
+      // getByRole()'s default non-exact matching — LLM-generated scripts
+      // rarely reproduce accessible-name casing exactly.
+      return `role=${selector.role}[name="${escapedName}" i]`;
     }
-    return `[role="${selector.role}"]`;
+    return `role=${selector.role}`;
   }
 
   if ('css' in selector) {
@@ -161,12 +176,25 @@ export interface ScreencastFrame {
 // ─── Virtual Time ───────────────────────────────────────────────────────────
 
 export interface VirtualTimeOptions {
-  /** Time domain: 'realtime' or 'time'. Default: 'time'. */
+  /**
+   * Time domain: 'time' enables virtual time, 'realtime' resumes real-time
+   * behavior (maps to the CDP 'advance' policy). Default: 'time'.
+   */
   timeDomain?: 'realtime' | 'time';
-  /** Virtual time factor (e.g., 0.5 for slow motion, 2 for fast forward). Default: 1. */
+  /**
+   * CDP virtual time policy used when timeDomain is 'time'.
+   * Default: 'pauseIfNetworkFetchesPending'.
+   */
+  policy?: 'advance' | 'pause' | 'pauseIfNetworkFetchesPending';
+  /**
+   * Accepted for backward compatibility. The Chrome DevTools Protocol has no
+   * time-scaling factor; values other than 1 are ignored with a warning.
+   */
   factor?: number;
-  /** Maximum virtual time in milliseconds. Default: 0 (unlimited). */
+  /** Virtual time budget in milliseconds (CDP `budget`). Default: unset (unlimited). */
   maxVirtualTime?: number;
+  /** Initial virtual time as seconds since epoch (CDP `initialVirtualTime`). */
+  initialVirtualTime?: number;
 }
 
 // ─── CDP ────────────────────────────────────────────────────────────────────

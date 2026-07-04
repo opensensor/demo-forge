@@ -12,15 +12,13 @@
  * - Fails gracefully if LLM is unavailable (no silent auto-commit)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   applyPatches,
   extractFailingStep,
   healStep,
   type FailingStep,
   type SelectorPatch,
-  type HealResult,
-  type HealProposal,
 } from "./heal-engine.js";
 import {
   generateSelectorDiff,

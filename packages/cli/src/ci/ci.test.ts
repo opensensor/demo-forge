@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -70,7 +71,6 @@ describe("CI workflow YAML generation", () => {
     expect(workflowYaml).toContain("jobs:");
     expect(workflowYaml).toContain("demoforge:");
     expect(workflowYaml).toContain("runs-on: ubuntu-latest");
-    expect(workflowYaml).toContain("strategy:");
     expect(workflowYaml).toContain("matrix:");
     expect(workflowYaml).toContain("actions/checkout@v4");
     expect(workflowYaml).toContain("actions/setup-node@v4");
@@ -202,7 +202,6 @@ describe("Init command scaffolds workflow files", () => {
 
 describe("Workflow YAML validation", () => {
   it("workflow YAML is valid YAML", () => {
-    const yaml = require("js-yaml");
     const workflowPath = join(
       __dirname,
       "..",
@@ -214,7 +213,7 @@ describe("Workflow YAML validation", () => {
       "demoforge.yml",
     );
     const content = readFileSync(workflowPath, "utf-8");
-    const parsed = yaml.load(content);
+    const parsed = yaml.load(content) as any;
 
     expect(parsed).toBeDefined();
     expect(parsed.name).toBeDefined();
@@ -223,10 +222,9 @@ describe("Workflow YAML validation", () => {
   });
 
   it("action.yml is valid YAML", () => {
-    const yaml = require("js-yaml");
     const actionPath = join(__dirname, "action.yml");
     const content = readFileSync(actionPath, "utf-8");
-    const parsed = yaml.load(content);
+    const parsed = yaml.load(content) as any;
 
     expect(parsed).toBeDefined();
     expect(parsed.name).toBeDefined();
@@ -235,7 +233,6 @@ describe("Workflow YAML validation", () => {
   });
 
   it("workflow YAML has required job steps", () => {
-    const yaml = require("js-yaml");
     const workflowPath = join(
       __dirname,
       "..",
@@ -247,7 +244,7 @@ describe("Workflow YAML validation", () => {
       "demoforge.yml",
     );
     const content = readFileSync(workflowPath, "utf-8");
-    const parsed = yaml.load(content);
+    const parsed = yaml.load(content) as any;
 
     const steps = parsed.jobs.demoforge.steps;
     const stepNames = steps.map((s: any) => s.name || s.run || s.uses);
@@ -275,7 +272,6 @@ describe("Workflow YAML validation", () => {
   });
 
   it("workflow YAML triggers on release tags", () => {
-    const yaml = require("js-yaml");
     const workflowPath = join(
       __dirname,
       "..",
@@ -287,14 +283,13 @@ describe("Workflow YAML validation", () => {
       "demoforge.yml",
     );
     const content = readFileSync(workflowPath, "utf-8");
-    const parsed = yaml.load(content);
+    const parsed = yaml.load(content) as any;
 
     expect(parsed.on.push.tags).toBeDefined();
     expect(Array.isArray(parsed.on.push.tags)).toBe(true);
   });
 
   it("workflow YAML supports workflow_dispatch inputs", () => {
-    const yaml = require("js-yaml");
     const workflowPath = join(
       __dirname,
       "..",
@@ -306,7 +301,7 @@ describe("Workflow YAML validation", () => {
       "demoforge.yml",
     );
     const content = readFileSync(workflowPath, "utf-8");
-    const parsed = yaml.load(content);
+    const parsed = yaml.load(content) as any;
 
     expect(parsed.on.workflow_dispatch).toBeDefined();
     expect(parsed.on.workflow_dispatch.inputs).toBeDefined();
@@ -404,9 +399,10 @@ describe("Full pipeline validation", () => {
     );
     const content = readFileSync(workflowPath, "utf-8");
 
-    expect(content).toContain("strategy:");
+    // Matrix rendering is exposed as a workflow_dispatch input that is passed
+    // to the render step via the DEMOFORGE_MATRIX env variable.
     expect(content).toContain("matrix:");
-    expect(content).toContain("fail-fast: false");
+    expect(content).toContain("DEMOFORGE_MATRIX");
   });
 
   it("heal step is conditional on failure", () => {

@@ -51,3 +51,8 @@ Desktop.ini
 
 # ESLint cache
 .eslintcache
+
+# Test artifacts
+test-output/
+test-results/
+playwright-report/

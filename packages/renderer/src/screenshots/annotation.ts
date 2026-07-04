@@ -46,10 +46,14 @@ export async function applyAnnotations(
   // Build composite input
   const compositeInputs: Array<{ input: Buffer; top: number; left: number }> = [];
 
-  // Process boxes: draw as overlay images
+  // Process boxes: draw as overlay images positioned at the box rect
   for (const box of boxes) {
     const overlay = await drawBox(box, width, height);
-    compositeInputs.push({ input: overlay, top: 0, left: 0 });
+    compositeInputs.push({
+      input: overlay,
+      top: Math.max(0, Math.round(box.rect.y)),
+      left: Math.max(0, Math.round(box.rect.x)),
+    });
   }
 
   // Process arrows: draw as overlay images

@@ -228,6 +228,14 @@ try {
   logger.error("Failed to load heal command: " + (err instanceof Error ? err.message : String(err)));
 }
 
+// studio
+try {
+  const { createStudioCommand } = await import(resolveDist("commands/studio.js"));
+  program.addCommand(createStudioCommand(logger, config));
+} catch (err) {
+  logger.error("Failed to load studio command: " + (err instanceof Error ? err.message : String(err)));
+}
+
 // ---------------------------------------------------------------------------
 // Unknown command handling with suggestions
 // ---------------------------------------------------------------------------

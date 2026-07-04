@@ -4,6 +4,27 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "bin"]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../browser"
+    },
+    {
+      "path": "../site"
+    },
+    {
+      "path": "../studio"
+    }
+  ],
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "bin",
+    "**/*.test.ts"
+  ]
 }

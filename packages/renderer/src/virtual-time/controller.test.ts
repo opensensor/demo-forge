@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BrowserSession, VirtualTimeOptions } from '@demoforge/browser';
+import type { BrowserSession } from '@demoforge/browser';
 
 import { VirtualTimeController } from './controller.js';
 

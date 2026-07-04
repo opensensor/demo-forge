@@ -128,7 +128,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('injects base effect styles on init', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -137,7 +137,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('base styles include effect overlay container', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -146,7 +146,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('base styles are CSS-only (no DOM mutation of app content)', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -159,7 +159,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('injects zoom transition styles', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -170,7 +170,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('injects dim overlay styles', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -181,7 +181,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('injects callout label styles', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -191,7 +191,7 @@ describe('EffectsManager — CSS injection', () => {
   });
 
   it('callout styles include positioning and arrow', async () => {
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
       c.params?.source?.includes('demoforge-effects'),
@@ -772,7 +772,7 @@ describe('EffectsManager — configurable effect style', () => {
 describe('EffectsManager — cursor compatibility', () => {
   it('effects use lower z-index than cursor', async () => {
     const mock = createMockBrowser();
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
 
     // Effects overlay should have z-index lower than cursor (2147483646)
     const calls = getExecuteCDPCalls(mock);
@@ -786,7 +786,7 @@ describe('EffectsManager — cursor compatibility', () => {
 
   it('effects do not interfere with cursor pointer-events', async () => {
     const mock = createMockBrowser();
-    const manager = new EffectsManager(mock, defaultConfig);
+    new EffectsManager(mock, defaultConfig);
 
     const calls = getExecuteCDPCalls(mock);
     const styleInjection = calls.find((c) =>
@@ -900,7 +900,6 @@ describe('EffectsManager — cleanup', () => {
     await manager.applyEffect({ type: 'zoom', scale: 1.5, atTime: 0 });
     await manager.clearAll();
 
-    const calls = getExecuteCDPCalls(mock);
     const clearCall = getLastExecuteCDP(mock);
     const source = clearCall?.params?.source as string;
     expect(source).toContain('none');

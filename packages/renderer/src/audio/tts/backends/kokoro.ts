@@ -9,19 +9,34 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { TtsBackend, BackendSynthesizeOptions, SynthesisResult, AudioFormat } from '../types.js';
 
 // Default Kokoro voice model
 const DEFAULT_KOKORO_VOICE = 'af_heart';
 
+// ESM equivalent of __dirname
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+/** Locate a binary by scanning the directories in process.env.PATH. */
+function findInPath(binary: string): string | null {
+  const envPath = process.env.PATH ?? '';
+  for (const dir of envPath.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, binary);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export class KokoroBackend implements TtsBackend {
   private modelPath?: string;
-  private format: AudioFormat;
 
   constructor(options?: { modelPath?: string; format?: AudioFormat }) {
     this.modelPath = options?.modelPath;
-    this.format = options?.format ?? 'wav';
   }
 
   getName(): string {
@@ -71,7 +86,8 @@ export class KokoroBackend implements TtsBackend {
       {
         input: text,
         timeout: 30000,
-        encoding: 'utf-8',
+        // No encoding: stdout must stay a Buffer — PCM audio is binary and
+        // would be corrupted by utf-8 decoding.
       },
     );
 
@@ -80,11 +96,11 @@ export class KokoroBackend implements TtsBackend {
     }
 
     if (result.status !== 0) {
-      const stderr = result.stderr?.toString() || 'unknown error';
+      const stderr = result.stderr?.toString('utf-8') || 'unknown error';
       throw new Error(`Kokoro exited with code ${result.status}: ${stderr}`);
     }
 
-    const audio = Buffer.from(result.stdout as Buffer | string);
+    const audio: Buffer = result.stdout ?? Buffer.alloc(0);
     // Kokoro produces ~24000 Hz mono 16-bit PCM WAV
     const durationMs = Math.max(0, Math.round((audio.length - 44) / (24000 * 2) * 1000));
 
@@ -92,14 +108,15 @@ export class KokoroBackend implements TtsBackend {
   }
 
   private resolveKokoroBinary(): string | null {
+    // Try PATH first, then vendored and common install locations
     const candidates = [
-      'kokoro', // in PATH
-      path.join(__dirname, '..', '..', 'vendor', 'kokoro', 'kokoro'),
+      findInPath('kokoro'),
+      path.join(MODULE_DIR, '..', '..', 'vendor', 'kokoro', 'kokoro'),
       '/usr/local/bin/kokoro',
     ];
 
     for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
+      if (candidate && fs.existsSync(candidate)) {
         return candidate;
       }
     }
@@ -113,7 +130,7 @@ export class KokoroBackend implements TtsBackend {
     }
 
     const modelCandidates = [
-      path.join(__dirname, '..', '..', 'vendor', 'kokoro', 'models', `${DEFAULT_KOKORO_VOICE}.onnx`),
+      path.join(MODULE_DIR, '..', '..', 'vendor', 'kokoro', 'models', `${DEFAULT_KOKORO_VOICE}.onnx`),
       `/usr/local/share/kokoro/models/${DEFAULT_KOKORO_VOICE}.onnx`,
     ];
 

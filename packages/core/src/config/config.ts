@@ -439,11 +439,11 @@ export async function loadConfig(cwd?: string): Promise<Config> {
 // CI workflow scaffold templates (T18_ci)
 // ---------------------------------------------------------------------------
 
-// GitHub Actions uses ${{ }} syntax. In JS template literals, $ must be escaped
-// as \${ to avoid being parsed as a template expression. We use a placeholder
-// and replace it after template creation to keep templates readable.
+// GitHub Actions uses ${{ }} syntax. In JS template literals, ${ would be
+// parsed as a template expression, so we build the `${{ expr }}` string with
+// plain concatenation to keep templates readable.
 function ghExpr(expr: string): string {
-  return `${'\${'}${expr}}`;
+  return "${{ " + expr + " }}";
 }
 
 function buildActionYaml(): string {

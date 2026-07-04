@@ -152,12 +152,40 @@ async function executeSeedCommand(
     let stderr = "";
     let timedOut = false;
 
-    const child = spawn(command, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    // Spawn detached so the shell gets its own process group; on timeout we
+    // signal the whole group, not just the shell (children could otherwise
+    // survive and hold the stdio pipes open, hanging this promise forever).
+    const child = spawn(command, {
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
 
-    // Timeout enforcement
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (child.pid !== undefined) {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
+      } catch {
+        // Process group already gone — fall back to signalling the child directly
+        try {
+          child.kill(signal);
+        } catch {
+          // Child already exited
+        }
+      }
+    };
+
+    // Timeout enforcement: SIGTERM first, escalate to SIGKILL after a grace
+    // period so the promise always settles even if SIGTERM is ignored.
+    let killTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      killGroup("SIGTERM");
+      killTimer = setTimeout(() => killGroup("SIGKILL"), 2000);
+      killTimer.unref();
     }, timeoutMs);
 
     child.stdout?.on("data", (data: Buffer) => {
@@ -170,9 +198,14 @@ async function executeSeedCommand(
 
     child.on("exit", (exitCode, _signal) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
 
       // Collect remaining buffered output
       if (timedOut) {
+        // The shell is gone but grandchildren may have survived SIGTERM —
+        // sweep the process group so nothing is left behind.
+        killGroup("SIGKILL");
+
         const message =
           `Seed command timed out after ${timeoutMs}ms. ` +
           `Increase the timeout in demoforge.yaml or optimize the seed command.`;
@@ -215,6 +248,7 @@ async function executeSeedCommand(
 
     child.on("error", (err: Error) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       const message = `Seed command failed to start: ${err.message}. ` +
         `Verify the command is available in your PATH.`;
       reject(new SeedError(message, {

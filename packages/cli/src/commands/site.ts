@@ -7,13 +7,13 @@
 
 import { Command } from "commander";
 import { type Config, createLogger } from "@demoforge/core";
-import { existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
-import { join, basename } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, mkdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { SiteGenerator } from "@demoforge/site";
 
 export function createSiteCommand(
   logger: ReturnType<typeof createLogger>,
-  config: Config,
+  _config: Config,
 ): Command {
   return new Command("site")
     .description("Generate a static demo site from rendered flows")
@@ -216,7 +216,7 @@ function hasFileByExtension(dir: string, extensions: string[]): boolean {
   try {
     const files = readdirSync(dir, { recursive: true });
     for (const file of files) {
-      const fullPath = typeof file === "string" ? join(dir, file) : file;
+      const fullPath = join(dir, file.toString());
       const stat = statSync(fullPath);
       if (stat.isFile()) {
         for (const ext of extensions) {
@@ -253,7 +253,7 @@ function findThumbnail(flowDir: string): string | undefined {
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
-      return basename(candidate);
+      return relative(flowDir, candidate);
     }
   }
 

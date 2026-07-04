@@ -104,8 +104,8 @@ export function generateFlowPage(flow: FlowInfo, config: SiteConfig): string {
       ${availableFormats.map((fmt) => `<button class="format-btn ${fmt === defaultFormat ? "active" : ""}" data-format="${fmt}" onclick="switchFormat('${fmt}')">${fmt.toUpperCase()}</button>`).join("")}
     </div>
     ${availableFormats.map((fmt) => `
-    <video class="video-player video-${fmt}" ${fmt !== defaultFormat ? 'style="display:none"' : ''} controls preload="metadata" poster="assets/${flow.name}-thumb.png">
-      <source src="assets/${flow.name}.${fmt}" type="${getMimeType(fmt)}">
+    <video class="video-player video-${fmt}" ${fmt !== defaultFormat ? 'style="display:none"' : ''} controls preload="metadata" poster="../assets/${flow.name}-thumb.png">
+      <source src="../assets/${flow.name}.${fmt}" type="${getMimeType(fmt)}">
       Your browser does not support the video tag.
     </video>`).join("")}
   </div>`
@@ -133,7 +133,7 @@ export function generateFlowPage(flow: FlowInfo, config: SiteConfig): string {
       <div class="timeline-content">
         <div class="timeline-header">
           <span class="timeline-type">${escapeHtml(stepType)}</span>
-          ${flow.screenshotFiles && flow.screenshotFiles[index] ? `<span class="timeline-screenshot"><img src="assets/${flow.name}-${basename(flow.screenshotFiles[index])}" alt="Step ${index + 1}" loading="lazy"></span>` : ""}
+          ${flow.screenshotFiles && flow.screenshotFiles[index] ? `<span class="timeline-screenshot"><img src="../assets/${flow.name}-${basename(flow.screenshotFiles[index])}" alt="Step ${index + 1}" loading="lazy"></span>` : ""}
         </div>
         <p class="timeline-description">${escapeHtml(stepDesc)}</p>
         ${step.narrate ? `<div class="timeline-narration"><p>${escapeHtml(step.narrate)}</p><button class="copy-btn" data-text="${escapeAttr(step.narrate)}" onclick="copyFromDataAttr(this)">Copy</button></div>` : ""}
@@ -289,10 +289,12 @@ function getMimeType(format: string): string {
   return mimeMap[format] || "video/mp4";
 }
 
-function formatDuration(seconds?: number): string {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+/** Formats a duration given in milliseconds, e.g. 10000 → "10s", 100000 → "1m 40s". */
+function formatDuration(ms?: number): string {
+  if (!ms) return "";
+  const totalSeconds = Math.round(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
@@ -312,7 +314,7 @@ function escapeHtml(str: string): string {
 }
 
 function escapeAttr(str: string): string {
-  return escapeHtml(str).replace(/ /g, "&nbsp;");
+  return escapeHtml(str);
 }
 
 
@@ -328,7 +330,7 @@ function basename(path: string): string {
 function generateSearchHtml(): string {
   return `
         <div class="search-container">
-          <input type="search" id="searchInput" placeholder="Search demos..." class="search-input" oninput="searchFlows(this.value)">
+          <input type="search" id="searchInput" placeholder="Search demos..." class="search-input">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         </div>`;
 }

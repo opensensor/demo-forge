@@ -106,7 +106,94 @@ interface ActionCheckResult {
  * with spaces, and trims.
  */
 function normalizeForMatch(s: string): string {
-  return s.toLowerCase().replace(/[-_]/g, " ").trim();
+  return s.toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function selectorTextCandidates(selector: string): string[] {
+  const candidates = [selector];
+  for (const match of selector.matchAll(/\b(?:name|aria-label|title|data-testid|id)=["']([^"']+)["']/gi)) {
+    if (match[1]) candidates.push(match[1]);
+  }
+  return candidates;
+}
+
+function actionTextCandidates(action: {
+  action: string;
+  params?: Record<string, unknown>;
+  notes?: string;
+  narration?: string;
+}): string[] {
+  const candidates: string[] = [];
+  const params = action.params as Record<string, unknown> | undefined;
+  const selector = params?.selector;
+
+  if (typeof selector === "string") {
+    candidates.push(...selectorTextCandidates(selector));
+  }
+
+  for (const value of Object.values(params ?? {})) {
+    if (typeof value === "string" && value !== selector) {
+      candidates.push(value);
+    }
+  }
+
+  if (typeof action.notes === "string") candidates.push(action.notes);
+  if (typeof action.narration === "string") candidates.push(action.narration);
+
+  return candidates;
+}
+
+function matchesPattern(text: string, pattern: string): boolean {
+  const normalizedText = normalizeForMatch(text);
+  const normalizedPattern = normalizeForMatch(pattern);
+  if (!normalizedText || !normalizedPattern) return false;
+  return normalizedText.includes(normalizedPattern);
+}
+
+function clickSelector(step: DemoStep): string | null {
+  if (typeof (step as { click?: unknown }).click === "string") {
+    return (step as { click: string }).click;
+  }
+  return null;
+}
+
+function isPauseStep(step: DemoStep | undefined): boolean {
+  return Boolean(step && "pause" in step);
+}
+
+function observationStepsForClick(selector: string): DemoStep[] {
+  if (/\b(report|modal|dialog|send|submit|confirm|approve|block \+ report|apply \+ report)\b/i.test(selector)) {
+    return [{ pause: 2000 } as DemoStep];
+  }
+  if (/\b(recommendation|whois|analysis|inspect|logs?|details?|open|show|expand)\b/i.test(selector)) {
+    return [
+      { pause: 1000 } as DemoStep,
+      { scroll: { amount: 360 } } as DemoStep,
+      { pause: 1200 } as DemoStep,
+    ];
+  }
+  return [];
+}
+
+function addObservationSteps(steps: DemoStep[]): DemoStep[] {
+  const enhanced: DemoStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step) continue;
+    enhanced.push(step);
+
+    const selector = clickSelector(step);
+    if (!selector) continue;
+
+    const followUps = observationStepsForClick(selector);
+    if (followUps.length === 0) continue;
+
+    for (const followUp of followUps) {
+      if (isPauseStep(followUp) && isPauseStep(steps[i + 1])) continue;
+      enhanced.push(followUp);
+    }
+  }
+  return enhanced;
 }
 
 // ─── Utility: Check hostname match ───────────────────────────────────────────
@@ -158,13 +245,13 @@ function matchesOrigin(url: string, origin: string): boolean {
  *   const partial = g.emitPartialScript("max_steps"); // emit partial script
  */
 export class Guardrails {
-  private config: Required<GuardrailsConfig>;
-  private stepCount = 0;
+  private _config: Required<GuardrailsConfig>;
+  private _stepCount = 0;
   private startTime = 0;
   private transcript: TranscriptEntry[] = [];
 
   constructor(config: GuardrailsConfig = {}) {
-    this.config = {
+    this._config = {
       allowedOrigins: config.allowedOrigins ?? [],
       destructiveButtonPatterns: config.destructiveButtonPatterns ?? [],
       destructiveUrlPatterns: config.destructiveUrlPatterns ?? [],
@@ -199,17 +286,17 @@ export class Guardrails {
 
   /** The current guardrails configuration. */
   get config(): Required<GuardrailsConfig> {
-    return this.config;
+    return this._config;
   }
 
   /** Current step count. */
   get stepCount(): number {
-    return this.stepCount;
+    return this._stepCount;
   }
 
   /** Remaining steps before budget is exceeded. */
   get remainingSteps(): number {
-    return Math.max(0, this.config.maxSteps - this.stepCount);
+    return Math.max(0, this._config.maxSteps - this._stepCount);
   }
 
   /** Elapsed time in milliseconds. */
@@ -224,20 +311,20 @@ export class Guardrails {
    * Returns { allowed: true } if no origins are configured (allow all).
    */
   checkOrigin(url: string): ActionCheckResult {
-    if (!this.config.allowedOrigins || this.config.allowedOrigins.length === 0) {
+    if (!this._config.allowedOrigins || this._config.allowedOrigins.length === 0) {
       return { allowed: true };
     }
 
     try {
-      const parsedUrl = new URL(url);
-      const isAllowed = this.config.allowedOrigins.some((origin) =>
+      new URL(url); // validates the URL — throws on malformed input
+      const isAllowed = this._config.allowedOrigins.some((origin) =>
         matchesOrigin(url, origin)
       );
 
       if (!isAllowed) {
         return {
           allowed: false,
-          reason: `blocked by guardrail: URL "${url}" is outside allowed origins (${this.config.allowedOrigins.join(", ")})`,
+          reason: `blocked by guardrail: URL "${url}" is outside allowed origins (${this._config.allowedOrigins.join(", ")})`,
         };
       }
     } catch {
@@ -254,32 +341,24 @@ export class Guardrails {
    * Checks both the selector name and the action notes.
    * Returns the matched pattern name, or null if not destructive.
    */
-  private checkDestructiveButton(action: { action: string; params?: Record<string, unknown>; notes?: string }): string | null {
-    if (!this.config.destructiveButtonPatterns || this.config.destructiveButtonPatterns.length === 0) {
+  private checkDestructiveButton(action: {
+    action: string;
+    params?: Record<string, unknown>;
+    notes?: string;
+    narration?: string;
+  }): string | null {
+    if (!this._config.destructiveButtonPatterns || this._config.destructiveButtonPatterns.length === 0) {
       return null;
     }
 
-    const params = action.params as Record<string, unknown> | undefined;
-    const selector = params?.selector as string | undefined;
-    const notes = (action.notes as string) || "";
-
-    // Check selector
-    if (selector) {
-      const normalizedSelector = normalizeForMatch(selector);
-      for (const pattern of this.config.destructiveButtonPatterns) {
-        const normalizedPattern = normalizeForMatch(pattern);
-        if (normalizedSelector.includes(normalizedPattern)) {
-          return pattern;
-        }
-      }
+    if (action.action !== "click") {
+      return null;
     }
 
-    // Check notes
-    if (notes) {
-      const normalizedNotes = normalizeForMatch(notes);
-      for (const pattern of this.config.destructiveButtonPatterns) {
-        const normalizedPattern = normalizeForMatch(pattern);
-        if (normalizedNotes.includes(normalizedPattern)) {
+    const candidates = actionTextCandidates(action);
+    for (const candidate of candidates) {
+      for (const pattern of this._config.destructiveButtonPatterns) {
+        if (matchesPattern(candidate, pattern)) {
           return pattern;
         }
       }
@@ -292,12 +371,12 @@ export class Guardrails {
    * Check if a URL matches any destructive URL patterns.
    */
   private isDestructiveUrl(url: string): boolean {
-    if (!this.config.destructiveUrlPatterns || this.config.destructiveUrlPatterns.length === 0) {
+    if (!this._config.destructiveUrlPatterns || this._config.destructiveUrlPatterns.length === 0) {
       return false;
     }
 
     const urlLower = url.toLowerCase();
-    for (const pattern of this.config.destructiveUrlPatterns) {
+    for (const pattern of this._config.destructiveUrlPatterns) {
       if (urlLower.includes(pattern.toLowerCase())) {
         return true;
       }
@@ -312,7 +391,12 @@ export class Guardrails {
    * Full guardrails check for an LLM action response.
    * Checks origin allowlist, destructive buttons, and destructive URLs.
    */
-  checkAction(action: { action: string; params?: Record<string, unknown>; notes?: string }): ActionCheckResult {
+  checkAction(action: {
+    action: string;
+    params?: Record<string, unknown>;
+    notes?: string;
+    narration?: string;
+  }): ActionCheckResult {
     const params = action.params as Record<string, unknown> | undefined;
 
     // Check destructive buttons
@@ -353,23 +437,23 @@ export class Guardrails {
    * Record a step (increment step counter).
    */
   recordStep(): void {
-    this.stepCount++;
+    this._stepCount++;
   }
 
   /**
    * Check if the step budget has been exceeded or is approaching.
    */
   checkStepBudget(): BudgetStatus {
-    const remaining = this.config.maxSteps - this.stepCount;
+    const remaining = this._config.maxSteps - this._stepCount;
     const exceeded = remaining <= 0;
-    const threshold = Math.ceil(this.config.maxSteps * 0.1); // 10% threshold
+    const threshold = Math.ceil(this._config.maxSteps * 0.1); // 10% threshold
     const warning = remaining <= threshold && remaining > 0;
 
     let message: string;
     if (exceeded) {
-      message = `Step budget exceeded: ${this.stepCount}/${this.config.maxSteps} steps used`;
+      message = `Step budget exceeded: ${this._stepCount}/${this._config.maxSteps} steps used`;
     } else if (warning) {
-      message = `Step budget warning: ${remaining} steps remaining (${this.stepCount}/${this.config.maxSteps})`;
+      message = `Step budget warning: ${remaining} steps remaining (${this._stepCount}/${this._config.maxSteps})`;
     } else {
       message = `Step budget OK: ${remaining} steps remaining`;
     }
@@ -388,16 +472,16 @@ export class Guardrails {
    */
   checkTimeBudget(): BudgetStatus {
     const elapsed = this.elapsedTime;
-    const remaining = Math.max(0, this.config.maxTime - elapsed);
-    const exceeded = elapsed >= this.config.maxTime;
-    const threshold = Math.ceil(this.config.maxTime * 0.1); // 10% threshold
+    const remaining = Math.max(0, this._config.maxTime - elapsed);
+    const exceeded = elapsed >= this._config.maxTime;
+    const threshold = Math.ceil(this._config.maxTime * 0.1); // 10% threshold
     const warning = remaining <= threshold && remaining > 0;
 
     let message: string;
     if (exceeded) {
-      message = `Time budget exceeded: ${elapsed}ms / ${this.config.maxTime}ms`;
+      message = `Time budget exceeded: ${elapsed}ms / ${this._config.maxTime}ms`;
     } else if (warning) {
-      message = `Time budget warning: ${remaining}ms remaining (${elapsed}ms / ${this.config.maxTime}ms)`;
+      message = `Time budget warning: ${remaining}ms remaining (${elapsed}ms / ${this._config.maxTime}ms)`;
     } else {
       message = `Time budget OK: ${remaining}ms remaining`;
     }
@@ -459,9 +543,9 @@ export class Guardrails {
     // Build warning message
     let warning: string | undefined;
     if (stopReason === "max_steps") {
-      warning = `Exploration stopped: step budget exceeded (${this.stepCount}/${this.config.maxSteps} steps). Partial script with ${steps.length} steps generated.`;
+      warning = `Exploration stopped: step budget exceeded (${this._stepCount}/${this._config.maxSteps} steps). Partial script with ${steps.length} steps generated.`;
     } else if (stopReason === "max_time") {
-      warning = `Exploration stopped: time budget exceeded (${this.elapsedTime}ms / ${this.config.maxTime}ms). Partial script with ${steps.length} steps generated.`;
+      warning = `Exploration stopped: time budget exceeded (${this.elapsedTime}ms / ${this._config.maxTime}ms). Partial script with ${steps.length} steps generated.`;
     }
 
     return {
@@ -562,10 +646,10 @@ export class Guardrails {
    */
   checkBeforeLlmCall(): void {
     // Validate that config is properly initialized
-    if (this.config.maxSteps <= 0) {
+    if (this._config.maxSteps <= 0) {
       throw new Error("Guardrails: maxSteps must be greater than 0");
     }
-    if (this.config.maxTime <= 0) {
+    if (this._config.maxTime <= 0) {
       throw new Error("Guardrails: maxTime must be greater than 0");
     }
   }
@@ -574,7 +658,12 @@ export class Guardrails {
    * Called after each LLM response parsing to validate the parsed action.
    * Returns an ActionCheckResult indicating whether the action is allowed.
    */
-  checkAfterResponse(action: { action: string; params?: Record<string, unknown>; notes?: string }): ActionCheckResult {
+  checkAfterResponse(action: {
+    action: string;
+    params?: Record<string, unknown>;
+    notes?: string;
+    narration?: string;
+  }): ActionCheckResult {
     return this.checkAction(action);
   }
 
@@ -584,30 +673,49 @@ export class Guardrails {
    * Assemble a DemoScript from the transcript entries.
    * Validates against the T2 schema.
    */
-  assembleScript(title: string, narrationMode: string): {
+  assembleScript(
+    title: string,
+    narrationMode: string,
+    options?: { url?: string; viewport?: { width: number; height: number; scale?: number } }
+  ): {
     script: DemoScript;
     valid: boolean;
     errors?: string[];
   } {
     const partial = this.emitPartialScript("done");
+    let steps = [...partial.steps];
+
+    // Replays start from a blank page; make sure the script navigates to the
+    // exploration entry point unless the first recorded step already does.
+    const firstStep = steps[0] as Record<string, unknown> | undefined;
+    if (options?.url && (!firstStep || !("goto" in firstStep))) {
+      steps.unshift({ goto: options.url } as DemoStep);
+    }
+
+    steps = addObservationSteps(steps);
+
     const script: DemoScript = {
       demo: title,
       title,
-      viewport: { width: 1440, height: 900, scale: 1 },
+      url: options?.url,
+      viewport: options?.viewport
+        ? {
+            width: options.viewport.width,
+            height: options.viewport.height,
+            scale: options.viewport.scale === 2 ? 2 : 1,
+          }
+        : { width: 1440, height: 900, scale: 1 },
       narration_mode: narrationMode as any,
-      steps: partial.steps,
+      steps,
     };
 
     const validation = validateDemoScript(script);
     if (!validation.success) {
-      const failure = validation as unknown as {
-        success: false;
-        error: { errors: Array<{ path: string[]; message: string }> };
-      };
+      const issues = (validation.error as unknown as { issues: Array<{ path: (string | number)[]; message: string }> }).issues;
       return {
         script,
         valid: false,
-        errors: failure.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+        errors: issues.map((e) => `${e.path.join(".")}: ${e.message}`),
       };
     }
 

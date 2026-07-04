@@ -5,7 +5,7 @@
  * and progress reporting.
  */
 
-import type { DemoScript, DemoStep } from "../types/index.js";
+import type { DemoScript } from "../types/index.js";
 
 // ─── Action Types ────────────────────────────────────────────────────────────
 
@@ -60,6 +60,10 @@ export interface PageState {
   selectors: string[];
   /** Current form field values */
   formFields: FormField[];
+  /** Visible modal/dialog surfaces that may require completion before done */
+  openDialogs?: OpenDialog[];
+  /** Visible page text (truncated) so the LLM can read on-screen data */
+  visibleText?: string;
 }
 
 /** A single accessibility tree node. */
@@ -96,6 +100,18 @@ export interface FormField {
   placeholder?: string;
   /** Whether the field is required */
   required: boolean;
+}
+
+/** A visible modal/dialog captured from the current page. */
+export interface OpenDialog {
+  /** Dialog title or heading, if available */
+  title?: string;
+  /** Visible dialog text, truncated */
+  text: string;
+  /** Visible dialog action labels */
+  actions: string[];
+  /** Selectors for visible dialog actions */
+  selectors: string[];
 }
 
 // ─── LLM Client Interface ────────────────────────────────────────────────────

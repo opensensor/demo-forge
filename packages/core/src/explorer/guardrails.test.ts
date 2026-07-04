@@ -12,8 +12,8 @@
  * - Configurable per-project via demoforge.yaml
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
-import { Guardrails, GuardrailsConfig, BudgetStatus } from "./guardrails.js";
+import { describe, it, expect } from "vitest";
+import { Guardrails, GuardrailsConfig } from "./guardrails.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -119,6 +119,33 @@ describe("Guardrails — destructive button patterns", () => {
     const result = g.checkAction({
       action: "click",
       params: { selector: "button[data-testid='submit-form']" },
+    });
+
+    expect(result.allowed).toBe(true);
+  });
+
+  it("blocks role selectors whose accessible name matches a destructive pattern", () => {
+    const g = new Guardrails(createConfig({
+      destructiveButtonPatterns: ["block"],
+    }));
+
+    const result = g.checkAction({
+      action: "click",
+      params: { selector: 'role=button[name="Block IP" i]' },
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("block");
+  });
+
+  it("does not block non-click controls whose selector contains a destructive word", () => {
+    const g = new Guardrails(createConfig({
+      destructiveButtonPatterns: ["block"],
+    }));
+
+    const result = g.checkAction({
+      action: "select",
+      params: { selector: "#incident-block-filter", value: "pending" },
     });
 
     expect(result.allowed).toBe(true);
@@ -503,6 +530,70 @@ describe("Guardrails — budget exceeded handling", () => {
     const partial = g.emitPartialScript("max_steps");
     const lastStep = partial.steps[partial.steps.length - 1];
     expect(lastStep).toHaveProperty("done");
+  });
+});
+
+describe("Guardrails — script observation steps", () => {
+  it("adds pauses and scrolls after content-revealing clicks in assembled scripts", () => {
+    const g = new Guardrails(createConfig());
+
+    g.addTranscriptEntry({
+      turn: 1,
+      action: "click",
+      params: { selector: 'role=button[name="Recommendation" i]' },
+      result: "clicked",
+      blocked: false,
+    });
+    g.addTranscriptEntry({
+      turn: 2,
+      action: "click",
+      params: { selector: 'role=button[name="WHOIS" i]' },
+      result: "clicked",
+      blocked: false,
+    });
+    g.addTranscriptEntry({
+      turn: 3,
+      action: "click",
+      params: { selector: "#abuse-report-submit" },
+      result: "clicked",
+      blocked: false,
+    });
+    g.addTranscriptEntry({
+      turn: 4,
+      action: "done",
+      params: {},
+      result: "done",
+      blocked: false,
+    });
+
+    const assembly = g.assembleScript("Incident Demo", "none", {
+      url: "https://example.com",
+      viewport: { width: 1280, height: 720 },
+    });
+
+    expect(assembly.valid).toBe(true);
+    const steps = assembly.script.steps;
+    const recommendationIndex = steps.findIndex(
+      (step) => "click" in step && step.click === 'role=button[name="Recommendation" i]'
+    );
+    const whoisIndex = steps.findIndex(
+      (step) => "click" in step && step.click === 'role=button[name="WHOIS" i]'
+    );
+    const submitIndex = steps.findIndex(
+      (step) => "click" in step && step.click === "#abuse-report-submit"
+    );
+
+    expect(steps.slice(recommendationIndex + 1, recommendationIndex + 4)).toEqual([
+      { pause: 1000 },
+      { scroll: { amount: 360 } },
+      { pause: 1200 },
+    ]);
+    expect(steps.slice(whoisIndex + 1, whoisIndex + 4)).toEqual([
+      { pause: 1000 },
+      { scroll: { amount: 360 } },
+      { pause: 1200 },
+    ]);
+    expect(steps[submitIndex + 1]).toEqual({ pause: 2000 });
   });
 });
 

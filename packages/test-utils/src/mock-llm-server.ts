@@ -101,7 +101,7 @@ export class MockLlmServer {
     this.predefinedResponses = options.predefinedResponses ?? {};
     this.onResponse = options.onResponse;
     this.app = express();
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: "10mb" }));
     this.setupRoutes();
   }
 
@@ -211,12 +211,14 @@ export class MockLlmServer {
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server = this.app.listen(this._port, this._host, (err?: Error) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        const addr = this.server!.address();
+      const server = this.app.listen(this._port, this._host);
+      server.once("error", (err: Error) => {
+        this.server = null;
+        reject(err);
+      });
+      server.once("listening", () => {
+        this.server = server;
+        const addr = server.address();
         if (addr && typeof addr === "object") {
           this._port = addr.port;
         }
@@ -226,14 +228,17 @@ export class MockLlmServer {
   }
 
   async close(): Promise<void> {
-    if (this.server) {
+    const server = this.server;
+    if (server) {
+      this.server = null;
       await new Promise<void>((resolve, reject) => {
-        this.server!.close((err?: Error) => {
+        // Drop any keep-alive sockets so close() can complete promptly.
+        server.closeAllConnections();
+        server.close((err?: Error) => {
           if (err) reject(err);
           else resolve();
         });
       });
-      this.server = null;
     }
     this._requestLog = [];
   }

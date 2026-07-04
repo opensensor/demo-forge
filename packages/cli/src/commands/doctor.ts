@@ -6,10 +6,9 @@
  */
 
 import { Command } from "commander";
-import { createLogger, type Config } from "@demoforge/core";
+import { createLogger } from "@demoforge/core";
+import { BrowserSetup } from "@demoforge/browser";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 export interface CheckResult {
   name: string;
@@ -47,27 +46,18 @@ function checkExecutable(name: string): CheckResult {
 }
 
 function checkPlaywrightBrowsers(): CheckResult {
-  const cacheHome =
-    process.env.PLAYWRIGHT_BROWSERS_PATH ??
-    join(process.env.HOME ?? "/tmp", ".cache", "ms-playwright");
+  // Delegate to @demoforge/browser, which scans the Playwright cache for any
+  // installed revision instead of hardcoding revision numbers.
+  const installed = BrowserSetup.checkAllInstalled();
+  const found = Object.entries(installed)
+    .filter(([, ok]) => ok)
+    .map(([name]) => name);
 
-  const chromiumPaths = [
-    join(cacheHome, "chromium-1228", "chrome-linux64", "chrome"),
-    join(cacheHome, "chromium-1200", "chrome-linux64", "chrome"),
-    join(cacheHome, "chromium_headless_shell-1228", "chrome-headless-shell-linux64", "chrome-headless-shell"),
-  ];
-
-  const firefoxPaths = [join(cacheHome, "firefox-1532", "firefox", "firefox")];
-  const webkitPaths = [join(cacheHome, "webkit-2311", "wkhtmltoimage")];
-
-  const allPaths = [...chromiumPaths, ...firefoxPaths, ...webkitPaths];
-  const installed = allPaths.filter((p) => existsSync(p));
-
-  if (installed.length > 0) {
+  if (found.length > 0) {
     return {
       name: "playwright-browsers",
       status: "ok",
-      details: `Found ${installed.length} browser executable(s)`,
+      details: `Installed: ${found.join(", ")}`,
     };
   }
 
@@ -114,6 +104,10 @@ export function createDoctorCommand(logger: ReturnType<typeof createLogger>): Co
 
       if (missingCount > 0) {
         logger.warn(`  ${missingCount} dependency(ies) missing`);
+      }
+
+      if (warningCount > 0) {
+        logger.warn(`  ${warningCount} check(s) reported warnings`);
       }
 
       if (okCount === results.length) {

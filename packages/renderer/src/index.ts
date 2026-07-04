@@ -102,6 +102,7 @@ export type {
 
 // ─── Capture Pipeline ──────────────────────────────────────────────────────────
 
+export { CapturePipeline } from './capture/capture-pipeline.js';
 export type {
   OutputMetadata,
   CaptureResult,
@@ -118,6 +119,10 @@ export type {
   ProgressCallback,
   CapturePipelineConfig,
 } from './capture/types.js';
+
+// ─── Screenshots ───────────────────────────────────────────────────────────────
+
+export * from './screenshots/index.js';
 
 // ─── T16 Matrix ────────────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@
  */
 
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // ─── Browser Installation ───────────────────────────────────────────────────
@@ -34,14 +34,16 @@ export class BrowserSetup {
 
     const browserArgs = browsers.map((b) => b).join(' ');
     const forceFlag = options.force ? '--force' : '';
-    const skipDepsFlag = options.skipDeps ? '--with-deps' : '';
+    // --with-deps installs system dependencies alongside the browsers;
+    // skipDeps:true installs browsers only.
+    const depsFlag = options.skipDeps ? '' : '--with-deps';
 
     try {
-      execSync(`npx playwright install ${browserArgs} ${forceFlag} ${skipDepsFlag}`, {
+      execSync(`npx playwright install ${browserArgs} ${forceFlag} ${depsFlag}`, {
         stdio: 'inherit' as never,
         shell: true as never,
       } as never);
-    } catch (error) {
+    } catch {
       // --with-deps and --force may not be supported in all versions
       // Fall back to basic install
       try {
@@ -54,18 +56,10 @@ export class BrowserSetup {
         console.error('Try running manually: npx playwright install', browserArgs);
         throw fallbackError;
       }
-    }
 
-    if (!options.skipDeps) {
-      console.log('Installing system dependencies...');
-      try {
-        execSync('npx playwright install-deps', {
-          stdio: 'inherit' as never,
-          shell: true as never,
-        } as never);
-      } catch {
+      if (!options.skipDeps) {
         console.warn(
-          'Failed to install system dependencies. ' +
+          'Browsers installed without system dependencies. ' +
             'You may need to run: npx playwright install-deps',
         );
       }
@@ -77,6 +71,10 @@ export class BrowserSetup {
   /**
    * Check if Playwright browsers are installed.
    *
+   * Scans the Playwright browsers cache for any revision of the requested
+   * browser family (e.g. `chromium-*`), so it does not depend on a specific
+   * pinned revision number.
+   *
    * @param browser - Browser family to check. Default: chromium.
    * @returns true if the browser is installed
    */
@@ -85,29 +83,31 @@ export class BrowserSetup {
       process.env.PLAYWRIGHT_BROWSERS_PATH ??
       join(process.env.HOME ?? '/tmp', '.cache', 'ms-playwright');
 
-    const browserPaths: Record<string, string[]> = {
-      chromium: [
-        join(cacheHome, 'chromium-1228', 'chrome-linux64', 'chrome'),
-        join(cacheHome, 'chromium-1200', 'chrome-linux64', 'chrome'),
-        join(
-          cacheHome,
-          'chromium_headless_shell-1228',
-          'chrome-headless-shell-linux64',
-          'chrome-headless-shell',
-        ),
-        join(
-          cacheHome,
-          'chromium_headless_shell-1200',
-          'chrome-headless-shell-linux64',
-          'chrome-headless-shell',
-        ),
-      ],
-      firefox: [join(cacheHome, 'firefox-1532', 'firefox', 'firefox')],
-      webkit: [join(cacheHome, 'webkit-2311', 'wkhtmltoimage')],
+    if (!existsSync(cacheHome)) {
+      return false;
+    }
+
+    const prefixes: Record<string, string[]> = {
+      chromium: ['chromium-', 'chromium_headless_shell-'],
+      firefox: ['firefox-'],
+      webkit: ['webkit-'],
     };
 
-    const paths = browserPaths[browser] ?? [];
-    return paths.some((p) => existsSync(p));
+    const wanted = prefixes[browser] ?? [];
+
+    let entries: string[];
+    try {
+      entries = readdirSync(cacheHome);
+    } catch {
+      return false;
+    }
+
+    return entries.some(
+      (entry) =>
+        wanted.some((prefix) => entry.startsWith(prefix)) &&
+        // Playwright writes this marker once a browser download finishes.
+        existsSync(join(cacheHome, entry, 'INSTALLATION_COMPLETE')),
+    );
   }
 
   /**
@@ -139,13 +139,15 @@ export class BrowserSetup {
   }
 
   /**
-   * Configure xvfb for headless CI environments.
+   * Configure DISPLAY for an already-running X display.
    *
-   * Creates an Xvfb display and sets the DISPLAY environment variable.
-   * Returns the display number for use with Playwright headless mode.
+   * This does NOT start an Xvfb server. If the given display is reachable
+   * (e.g. an Xvfb server started externally), DISPLAY is set and the display
+   * string is returned. Otherwise returns null. To run a command under a
+   * temporary Xvfb server, use runWithXvfb() instead.
    *
-   * @param display - Xvfb display number. Default: 99.
-   * @returns The DISPLAY value to use (e.g., ":99")
+   * @param display - X display number to check. Default: 99.
+   * @returns The DISPLAY value in use (e.g., ":99"), or null if no display is available
    */
   static configureXvfb(display: number = 99): string | null {
     if (!this.isXvfbAvailable()) {
@@ -158,7 +160,7 @@ export class BrowserSetup {
 
     const displayStr = `:${display}`;
 
-    // Check if display is already in use
+    // Check if the display is already reachable
     const checkResult = spawnSync('xdpyinfo', ['-display', displayStr], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -171,21 +173,8 @@ export class BrowserSetup {
       return displayStr;
     }
 
-    // Start Xvfb
-    const xvfb = spawnSync('xvfb-run', ['-a', '-s', `-screen 0 1280x720x24`, 'echo', 'ready'], {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    });
-
-    if (xvfb.status === 0) {
-      process.env.DISPLAY = displayStr;
-      return displayStr;
-    }
-
-    // Fallback: set DISPLAY without starting Xvfb (may work if already running)
-    process.env.DISPLAY = displayStr;
-    return displayStr;
+    // No reachable display; do not claim one is running.
+    return null;
   }
 
   /**

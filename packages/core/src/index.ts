@@ -20,6 +20,11 @@ export * from "./errors/index.js";
 // LLM client adapter
 export * from "./llm/client.js";
 export * from "./llm/types.js";
+export {
+  createExplorerLlmAdapter,
+  extractActionJson,
+  type ExplorerAdapterOptions,
+} from "./llm/explorer-adapter.js";
 
 // Config
 export * from "./config/config.js";

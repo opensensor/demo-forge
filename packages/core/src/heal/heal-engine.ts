@@ -322,7 +322,10 @@ async function sendHealRequest(
   });
 
   const content = response.choices[0]?.message?.content ?? "";
-  const parsed = JSON.parse(content);
+  const parsed = JSON.parse(content); // SyntaxError handled by healStep
+  if (!parsed || typeof parsed !== "object") {
+    throw new SyntaxError("LLM healing response is not a JSON object");
+  }
 
   return {
     patches: (parsed.patches ?? []).map((p: Record<string, unknown>) => ({
@@ -571,6 +574,15 @@ export async function healStep(
         patchesApplied: 0,
       };
     }
+    if (err instanceof SyntaxError) {
+      return {
+        success: false,
+        error: `LLM returned malformed JSON for healing proposal: ${err.message}`,
+        proposals: [],
+        llmUnavailable: false,
+        patchesApplied: 0,
+      };
+    }
     throw err;
   }
 
@@ -588,6 +600,17 @@ export async function healStep(
       actionType: failingStep.actionType,
       oldSelector: failingStep.oldSelector,
     }));
+  }
+
+  if (patches.length === 0) {
+    // LLM proposed nothing — there is no patch to review or apply
+    return {
+      success: false,
+      error: "LLM proposed no selector patches for the failing step. Nothing to apply; re-run heal or fix the selector manually.",
+      proposals: [],
+      llmUnavailable: false,
+      patchesApplied: 0,
+    };
   }
 
   const diff = generateSelectorDiff(patches);
@@ -615,7 +638,7 @@ export async function healStep(
   }
 
   // Step 7: Accept/reject workflow
-  const accepted = accept || patches.length === 0;
+  const accepted = accept === true;
 
   const proposal: HealProposal = {
     failingStep,

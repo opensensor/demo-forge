@@ -253,6 +253,7 @@ export const renderMatrixSchema = z.object({
 export const demoScriptSchema = z.object({
   demo: z.string().min(1),
   title: z.string().min(1),
+  url: z.string().optional(),
   viewport: viewportSchema,
   narration_mode: narrationModeSchema,
   steps: z.array(demoStepSchema).min(0),

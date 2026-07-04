@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 export function createRenderCommand(
   logger: ReturnType<typeof createLogger>,
-  config: Config,
+  _config: Config,
 ): Command {
   return new Command("render")
     .description("Render demo scripts into video and other output assets")

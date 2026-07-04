@@ -5,7 +5,7 @@
  * configurable cursor style, timestamp synchronization, and page injection.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { BrowserSession } from '@demoforge/browser';
 

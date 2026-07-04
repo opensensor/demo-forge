@@ -250,6 +250,8 @@ export interface RenderMatrix {
 export interface DemoScript {
   demo: string;
   title: string;
+  /** Base URL of the app under demo (used as the replay entry point). */
+  url?: string;
   viewport: Viewport;
   narration_mode: NarrationMode;
   steps: DemoStep[];

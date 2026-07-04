@@ -14,12 +14,10 @@
  * - Config loaded once at CLI entry and injected into command handlers
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   createLogger,
   createSilentLogger,
-  type LogLevel,
-  type LogEntry,
   DemoForgeError,
   ConfigError,
   ValidationError,
@@ -27,6 +25,7 @@ import {
   defaults,
 } from "@demoforge/core";
 import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -106,7 +105,7 @@ describe("CLI Logger", () => {
 
     console.error = originalError;
     expect(outputs).toHaveLength(1);
-    const parsed = JSON.parse(outputs[0]);
+    const parsed = JSON.parse(outputs[0] ?? "");
     expect(parsed.level).toBe("info");
     expect(parsed.message).toBe("json test");
     expect(parsed.timestamp).toBeTypeOf("number");
@@ -122,7 +121,7 @@ describe("CLI Logger", () => {
 
     console.error = originalError;
     expect(outputs).toHaveLength(1);
-    const parsed = JSON.parse(outputs[0]);
+    const parsed = JSON.parse(outputs[0] ?? "");
     expect(parsed.context).toEqual({ url: "http://example.com", code: 500 });
   });
 
@@ -222,14 +221,14 @@ describe("Doctor Command", () => {
 
 describe("Config Auto-Discovery", () => {
   it("searches from CWD upward for config file", async () => {
-    const tmpDir = require("node:os").tmpdir();
+    const tmpDir = tmpdir();
     const cfg = await loadConfig(tmpDir);
     expect(cfg).toBeDefined();
     expect(typeof cfg.demo).toBe("string");
   });
 
   it("returns defaults when no config file exists", async () => {
-    const tmpDir = require("node:os").tmpdir();
+    const tmpDir = tmpdir();
     const cfg = await loadConfig(tmpDir);
     const def = defaults();
 
@@ -239,7 +238,7 @@ describe("Config Auto-Discovery", () => {
   });
 
   it("respects explicit --config override", async () => {
-    const tmpDir = mkdtempSync(require("node:os").tmpdir() + "/demoforge-");
+    const tmpDir = mkdtempSync(join(tmpdir(), "demoforge-"));
 
     try {
       writeFileSync(
@@ -272,7 +271,7 @@ describe("Config Auto-Discovery", () => {
       expect(cfg.title).toBe("Test Config Override");
       expect(cfg.llm.base_url).toBe("http://custom:8080");
       expect(cfg.llm.model).toBe("custom-model");
-      expect(cfg.render.viewports[0].width).toBe(800);
+      expect(cfg.render.viewports[0]?.width).toBe(800);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -323,7 +322,7 @@ describe("CLI Shared Options", () => {
   });
 
   it("--config flag overrides auto-discovery", async () => {
-    const tmpDir = mkdtempSync(require("node:os").tmpdir() + "/demoforge-");
+    const tmpDir = mkdtempSync(join(tmpdir(), "demoforge-"));
 
     try {
       writeFileSync(
@@ -374,7 +373,7 @@ describe("CLI Error Handling", () => {
     }
 
     expect(caught).toHaveLength(1);
-    expect(caught[0].demoforge).toBe(true);
+    expect(caught[0]?.demoforge).toBe(true);
   });
 
   it("error messages are user-friendly", () => {
@@ -388,7 +387,7 @@ describe("CLI Error Handling", () => {
       issues: [{ path: ["steps", "0", "goto"], message: "required field" }],
     });
     expect(err.issues).toHaveLength(1);
-    expect(err.issues![0].path).toEqual(["steps", "0", "goto"]);
+    expect(err.issues?.[0]?.path).toEqual(["steps", "0", "goto"]);
   });
 });
 

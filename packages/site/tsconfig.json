@@ -2,12 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "paths": {
-      "@demoforge/core": ["./packages/core/dist/index.js"],
-      "@demoforge/renderer": ["./packages/renderer/dist/index.js"]
-    }
+    "rootDir": "./src"
   },
+  "references": [{ "path": "../core" }, { "path": "../renderer" }],
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

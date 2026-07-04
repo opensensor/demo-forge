@@ -24,7 +24,6 @@ export type {
   TranscriptOptions,
   TurnPayload,
   ScriptAssemblyOptions,
-  ScriptAssemblyResult,
   HumanConfirmationResult,
   ConfirmDecision,
   ConfirmCallback,

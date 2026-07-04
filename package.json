@@ -11,9 +11,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --build packages/core packages/browser packages/cli packages/renderer packages/site",
-    "watch": "tsc --build --watch packages/core packages/browser packages/cli packages/renderer packages/site",
+    "build": "tsc --build packages/cli packages/renderer packages/test-utils packages/studio",
+    "watch": "tsc --build --watch packages/cli packages/renderer packages/test-utils packages/studio",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test --config test/playwright.config.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -21,13 +23,16 @@
     "format:check": "prettier --check \"**/*.{ts,js,mjs,json,md,yaml,yml}\""
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "eslint": "^9.0.0",
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^3.2.6",
+    "eslint": "^9.0.0",
     "globals": "^15.0.0",
     "prettier": "^3.2.0",
-    "typescript": "^5.3.0",
+    "typescript": "^5.9.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^1.2.0"
-  }
+    "vitest": "^3.2.6"
+  },
+  "license": "GPL-3.0-only"
 }

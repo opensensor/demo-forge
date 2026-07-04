@@ -2,13 +2,25 @@
  * DemoForge renderer — burned-in captions via ffmpeg.
  *
  * Uses ffmpeg to overlay captions onto video frames. Supports two approaches:
- * 1. drawtext filter with SRT input (styled burned-in captions)
+ * 1. subtitles filter with SRT input (styled burned-in captions)
  * 2. Subtitle muxer (native subtitle stream embedding)
  */
 
 import { spawn } from 'node:child_process';
 
 import type { BurnedInCaptionOptions, SubtitleFilterOutput, ProgressCallback } from './types.js';
+
+/** Escape a file path for use inside an ffmpeg filter graph (\ : ' , ; [ ]). */
+function escapeFilterPath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]');
+}
 
 // ─── BurnedInCaptions ─────────────────────────────────────────────────────────
 
@@ -24,14 +36,14 @@ export class BurnedInCaptions {
   }
 
   /**
-   * Burn captions into video using the drawtext filter.
+   * Burn captions into video using the subtitles filter.
    * This renders the SRT captions as styled text directly on video frames.
    */
   async burnIn(options: BurnedInCaptionOptions): Promise<{ success: true; outputPath: string } | { success: false; error: string; stderr?: string }> {
     const { inputPath, outputPath, srtPath } = options;
 
-    const filterOutput = this.buildFilter(inputPath, srtPath);
-    const finalOutput = outputPath || filterOutput.ffmpegArgs[filterOutput.ffmpegArgs.length - 1]!;
+    const finalOutput = outputPath || srtPath.replace(/\.srt$/, '_burned.mp4');
+    const filterOutput = this.buildFilter(inputPath, srtPath, finalOutput);
 
     return this.runFfmpeg(filterOutput.ffmpegArgs, finalOutput);
   }
@@ -50,16 +62,19 @@ export class BurnedInCaptions {
   }
 
   /**
-   * Build ffmpeg arguments for burned-in captions using drawtext filter.
+   * Build ffmpeg arguments for burned-in captions using the subtitles filter.
+   * The SRT file is consumed by the filter itself (not as a second input).
    */
-  buildFilter(inputPath: string, srtPath: string): SubtitleFilterOutput {
-    const fontPath = this.resolveFontPath();
-    const filterArg = `[0:v]drawtext=fontfile='${fontPath}':fontsize=24:fontcolor=WHITE:x=(w-text_w)/2:y=h-text_h-10:borderw=2:bordercolor=BLACK:box=1:boxcolor=0x000000AA@0.8[text]`;
+  buildFilter(inputPath: string, srtPath: string, outputPath?: string): SubtitleFilterOutput {
+    const out = outputPath ?? srtPath.replace(/\.srt$/, '_burned.mp4');
+    const escapedSrt = escapeFilterPath(srtPath);
+    // ASS force_style: white text, black outline, semi-transparent box
+    const forceStyle = 'FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,BorderStyle=3,BackColour=&H55000000,Alignment=2';
+    const filterArg = `[0:v]subtitles=filename=${escapedSrt}:force_style='${forceStyle}'[text]`;
 
     const ffmpegArgs = [
       '-y',
       '-i', inputPath,
-      '-i', srtPath,
       '-filter_complex', filterArg,
       '-c:v', 'libx264',
       '-preset', 'medium',
@@ -68,7 +83,7 @@ export class BurnedInCaptions {
       '-movflags', '+faststart',
       '-map', '[text]',
       '-map', '0:a?',
-      srtPath.replace(/\.srt$/, '_burned.mp4'),
+      out,
     ];
 
     return { filterArg, ffmpegArgs };
@@ -98,31 +113,6 @@ export class BurnedInCaptions {
   }
 
   // ─── Private methods ────────────────────────────────────────────────────
-
-  private resolveFontPath(): string {
-    // Try common system font paths
-    const candidates = [
-      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      '/usr/share/fonts/TTF/DejaVuSans.ttf',
-      '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-      '/System/Library/Fonts/Helvetica.ttc',
-      'C:/Windows/Fonts/arial.ttf',
-    ];
-
-    for (const candidate of candidates) {
-      try {
-        const fs = require('node:fs');
-        if (fs.existsSync(candidate)) {
-          return candidate;
-        }
-      } catch {
-        // Skip if font check fails
-      }
-    }
-
-    // Return a fallback path (ffmpeg will use built-in font if not found)
-    return '';
-  }
 
   private async runFfmpeg(args: string[], outputPath: string): Promise<{ success: true; outputPath: string } | { success: false; error: string; stderr?: string }> {
     return new Promise((resolve) => {

@@ -7,12 +7,12 @@
 
 import { Command } from "commander";
 import { type Config, createLogger } from "@demoforge/core";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 export function createExploreCommand(
   logger: ReturnType<typeof createLogger>,
-  config: Config,
+  _config: Config,
 ): Command {
   return new Command("explore")
     .description("Explore a web application and generate a demo script using the LLM agent")

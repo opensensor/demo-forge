@@ -31,6 +31,8 @@ import {
 } from "@demoforge/core";
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, basename, extname, dirname } from "node:path";
+import { createInterface } from "node:readline/promises";
+import yaml from "js-yaml";
 import { BrowserSession } from "@demoforge/browser";
 
 // ─── Interface for interactive prompt ────────────────────────────────────────
@@ -40,20 +42,17 @@ interface InteractivePrompt {
 }
 
 function createInteractivePrompt(): InteractivePrompt {
-  const readline = require("node:readline").createInterface({
+  const readline = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
   return {
-    ask(question, options): Promise<string> {
-      return new Promise((resolve) => {
-        const optionStr = options ? ` (${options.join("/")})` : "";
-        readline.question(`${question}${optionStr}: `, (answer: string) => {
-          readline.close();
-          resolve(answer.trim().toLowerCase());
-        });
-      });
+    async ask(question, options): Promise<string> {
+      const optionStr = options ? ` (${options.join("/")})` : "";
+      const answer = await readline.question(`${question}${optionStr}: `);
+      readline.close();
+      return answer.trim().toLowerCase();
     },
   };
 }
@@ -73,7 +72,6 @@ function loadScript(filePath: string): DemoScript {
 
   if (ext === ".yaml" || ext === ".yml") {
     // For YAML files, use js-yaml
-    const yaml = require("js-yaml");
     const parsed = yaml.load(content) as DemoScript;
     return parsed;
   }
@@ -95,7 +93,6 @@ function saveScript(script: DemoScript, filePath: string): void {
   if (ext === ".json") {
     writeFileSync(filePath, JSON.stringify(script, null, 2));
   } else {
-    const yaml = require("js-yaml");
     writeFileSync(filePath, yaml.dump(script));
   }
 }

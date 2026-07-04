@@ -4,13 +4,14 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MockLlmServer, createMockLlmServer, type MockLlmServerOptions } from "./mock-llm-server.js";
 
 // ─── Fixtures path resolution ───
 // The test-utils package lives at packages/test-utils/src/, fixtures are at test/fixtures/
 // We need to resolve from the project root.
-const _resolved = new URL("../../..", import.meta.url);
-export const FIXTURES_DIR = join(_resolved.pathname, "test", "fixtures");
+const _resolved = fileURLToPath(new URL("../../..", import.meta.url));
+export const FIXTURES_DIR = join(_resolved, "test", "fixtures");
 
 /**
  * Validate that a demo script object has the required top-level fields
@@ -164,9 +165,9 @@ export async function expectRenderOutput(
   const { outputDir, extensions = [".mp4", ".webm", ".gif", ".png"], minFiles = 1, flowNames } = options;
 
   const { readdirSync } = await import("node:fs");
-  const { join: pathJoin } = await import("node:path");
+  const { join: pathJoin, isAbsolute } = await import("node:path");
 
-  const dir = pathJoin(process.cwd(), outputDir);
+  const dir = isAbsolute(outputDir) ? outputDir : pathJoin(process.cwd(), outputDir);
 
   if (!existsSync(dir)) {
     throw new Error(`Render output directory not found: ${dir}`);
@@ -184,12 +185,17 @@ export async function expectRenderOutput(
   }
 
   if (flowNames) {
-    const fileBasename = (f: string) => f.replace(/\.[^.]+$/, "").split("-")[0];
-    const foundNames = new Set(files.map(fileBasename));
-    const missing = flowNames.filter((n) => !foundNames.has(n));
+    const stripExtension = (f: string) => f.replace(/\.[^.]+$/, "");
+    const missing = flowNames.filter(
+      (name) =>
+        !files.some((f) => {
+          const base = stripExtension(f);
+          return base === name || base.startsWith(`${name}-`);
+        })
+    );
     if (missing.length > 0) {
       throw new Error(
-        `Expected flow names ${missing.join(", ")} in output, found: ${[...foundNames].join(", ")}`
+        `Expected flow names ${missing.join(", ")} in output, found files: ${files.join(", ")}`
       );
     }
   }

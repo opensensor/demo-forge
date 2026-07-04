@@ -6,6 +6,7 @@
  */
 
 import { chromium, firefox, webkit } from 'playwright';
+import type { CDPSession } from 'playwright';
 
 import type {
   BrowserLaunchOptions,
@@ -52,10 +53,17 @@ export class BrowserSession {
   private _browser: PlaywrightBrowser | null = null;
   private _context: PlaywrightContext | null = null;
   private _page: PlaywrightPage | null = null;
+  private _cdpSession: CDPSession | null = null;
+  private _cdpSessionPage: PlaywrightPage | null = null;
   private _screencastActive = false;
-  private _options: Required<BrowserLaunchOptions>;
+  private _options: Required<Omit<BrowserLaunchOptions, 'recordVideo' | 'forbidHostDisplay'>>;
+  private _recordVideo: BrowserLaunchOptions['recordVideo'];
+  private _forbidHostDisplay: boolean;
+  private _videoPath: string | null = null;
 
   constructor(options: BrowserLaunchOptions = {}) {
+    this._recordVideo = options.recordVideo;
+    this._forbidHostDisplay = options.forbidHostDisplay ?? false;
     this._options = {
       browser: options.browser ?? 'chromium',
       headed: options.headed ?? true,
@@ -100,6 +108,8 @@ export class BrowserSession {
       return this;
     }
 
+    this._assertHostDisplayPolicy();
+
     const browserType = this._getBrowserType();
     const launchArgs = this._buildLaunchArgs();
 
@@ -121,10 +131,27 @@ export class BrowserSession {
     return this;
   }
 
+  /**
+   * Path to the recorded video file, if `recordVideo` was set.
+   * Only populated after `close()` resolves (Playwright finalizes the file
+   * when the context closes).
+   */
+  get videoPath(): string | null {
+    return this._videoPath;
+  }
+
   async close(): Promise<void> {
     if (this._screencastActive) {
       await this.stopScreencast();
     }
+
+    if (this._cdpSession) {
+      await this._cdpSession.detach().catch(() => {});
+      this._cdpSession = null;
+      this._cdpSessionPage = null;
+    }
+
+    const video = this._page?.video() ?? null;
 
     if (this._page) {
       this._page = null;
@@ -133,6 +160,11 @@ export class BrowserSession {
     if (this._context) {
       await this._context.close().catch(() => {});
       this._context = null;
+    }
+
+    // The video file is only finalized once the context is closed.
+    if (video) {
+      this._videoPath = await video.path().catch(() => null);
     }
 
     if (this._browser) {
@@ -354,59 +386,61 @@ export class BrowserSession {
     this._screencastActive = false;
   }
 
+  /**
+   * Control virtual time via CDP `Emulation.setVirtualTimePolicy` (Chromium only).
+   *
+   * The Chrome DevTools Protocol has no time-scaling "factor"; virtual time is
+   * driven by a policy ('advance' | 'pause' | 'pauseIfNetworkFetchesPending')
+   * plus an optional budget. Mapping:
+   * - `timeDomain: 'realtime'` resumes real-time behavior (policy 'advance').
+   * - `timeDomain: 'time'` (default) enables virtual time with
+   *   `options.policy` (default 'pauseIfNetworkFetchesPending').
+   * - `maxVirtualTime` maps to the CDP `budget` (milliseconds).
+   * - `initialVirtualTime` seeds the clock (seconds since epoch).
+   * - `factor` has no CDP equivalent and is ignored with a warning.
+   *
+   * Errors are rethrown (e.g., on non-Chromium browsers where CDP is unavailable).
+   */
   async setVirtualTime(options: VirtualTimeOptions): Promise<void> {
     const cdp = await this._getCDPSession();
-    const domain = options.timeDomain ?? 'time';
 
-    // Try to set time domain first (not available in all Chrome versions)
-    try {
-      await (cdp as any).send('Page.setTimeDomain', {
-        timeDomain: domain,
-      });
-    } catch {
-      // setTimeDomain not supported in newer Chrome
+    if (options.factor !== undefined && options.factor !== 1) {
+      console.warn(
+        'setVirtualTime: CDP has no virtual time scaling factor; ignoring `factor`. ' +
+          "Use `policy`/`maxVirtualTime` (Emulation.setVirtualTimePolicy) instead.",
+      );
     }
 
-    if (domain === 'time' && options.factor !== undefined) {
-      const maxVirtualTime = options.maxVirtualTime ?? 0;
-      const params: Record<string, unknown> = {
-        policy: 'continue',
-        initialTimestamp: new Date().toISOString(),
-      };
-      if (maxVirtualTime) {
-        params.virtualTimeBudgetMs = maxVirtualTime;
-      }
-      if (options.factor !== 1) {
-        params.virtualTimeParams = {
-          interval: (1 / options.factor) * 1000,
-        };
-      }
-      // Try virtual time policy (not available in all Chrome versions)
-      try {
-        await (cdp as any).send('Page.setVirtualTimePolicy', params);
-      } catch {
-        // setVirtualTimePolicy not supported; virtual time injection unavailable
-      }
+    if (options.timeDomain === 'realtime') {
+      await this.resetVirtualTime();
+      return;
     }
+
+    const params: Record<string, unknown> = {
+      policy: options.policy ?? 'pauseIfNetworkFetchesPending',
+    };
+    if (options.maxVirtualTime) {
+      params.budget = options.maxVirtualTime;
+    }
+    if (options.initialVirtualTime !== undefined) {
+      params.initialVirtualTime = options.initialVirtualTime;
+    }
+
+    await (cdp as any).send('Emulation.setVirtualTimePolicy', params);
   }
 
+  /**
+   * Resume normal time progression after setVirtualTime.
+   *
+   * CDP has no explicit "disable virtual time" command; the closest real
+   * behavior is switching the policy to 'advance', which lets virtual time
+   * progress continuously like real time. Errors are rethrown.
+   */
   async resetVirtualTime(): Promise<void> {
     const cdp = await this._getCDPSession();
-    // Try to reset time domain (not available in all Chrome versions)
-    try {
-      await (cdp as any).send('Page.setTimeDomain', {
-        timeDomain: 'realtime',
-      });
-    } catch {
-      // setTimeDomain not supported; set virtual time policy to continue with real time
-      try {
-        await (cdp as any).send('Page.setVirtualTimePolicy', {
-          policy: 'continue',
-        });
-      } catch {
-        // setVirtualTimePolicy not supported
-      }
-    }
+    await (cdp as any).send('Emulation.setVirtualTimePolicy', {
+      policy: 'advance',
+    });
   }
 
   async executeCDP(command: CDPCommand): Promise<CDPResponse> {
@@ -455,18 +489,33 @@ export class BrowserSession {
   }
 
   private _buildLaunchArgs(): Parameters<typeof chromium.launch>[0] {
-    return {
-      headless: this._options.headless || !this._options.headed,
-      slowMo: this._options.slowMo,
-      timeout: this._options.timeout,
-      args: [
+    const args: string[] = [];
+
+    // These flags are Chromium-specific; firefox/webkit reject unknown args.
+    if (this._options.browser === 'chromium') {
+      args.push(
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
-        ...this._options.args,
-      ],
+      );
+      if (this._forbidHostDisplay) {
+        args.push('--ozone-platform=headless');
+      }
+      // --single-process is crash-prone; only enable when explicitly requested.
+      if (process.env.DEMOFORGE_SINGLE_PROCESS === '1' ||
+          process.env.DEMOFORGE_SINGLE_PROCESS === 'true') {
+        args.push('--single-process');
+      }
+    }
+
+    args.push(...this._options.args);
+
+    return {
+      headless: this._options.headless || !this._options.headed,
+      slowMo: this._options.slowMo,
+      timeout: this._options.timeout,
+      args,
     };
   }
 
@@ -479,7 +528,26 @@ export class BrowserSession {
       viewport: this._options.viewport,
       ignoreHTTPSErrors: true,
       javaScriptEnabled: true,
+      recordVideo: this._recordVideo,
     });
+  }
+
+  private _assertHostDisplayPolicy(): void {
+    if (!this._forbidHostDisplay) {
+      return;
+    }
+
+    if (!this._options.headless || this._options.headed) {
+      throw new Error(
+        'Host display use is forbidden: launch must set headless: true and headed: false.',
+      );
+    }
+
+    if (this._options.cdpEndpoint || this._options.cdpPort) {
+      throw new Error(
+        'Host display use is forbidden: external CDP browsers may be attached to a visible display.',
+      );
+    }
   }
 
   private async _createPage(): Promise<void> {
@@ -497,8 +565,22 @@ export class BrowserSession {
     return this._page;
   }
 
-  private async _getCDPSession(): Promise<import('playwright').CDPSession> {
+  private async _getCDPSession(): Promise<CDPSession> {
     const page = this._ensurePage();
-    return page.context().newCDPSession(page);
+
+    if (this._cdpSession && this._cdpSessionPage === page) {
+      return this._cdpSession;
+    }
+
+    // Page changed: detach the stale session before creating a new one.
+    if (this._cdpSession) {
+      await this._cdpSession.detach().catch(() => {});
+      this._cdpSession = null;
+      this._cdpSessionPage = null;
+    }
+
+    this._cdpSession = await page.context().newCDPSession(page);
+    this._cdpSessionPage = page;
+    return this._cdpSession;
   }
 }

@@ -53,7 +53,7 @@ function createMockFlow(name: string, baseDir: string, narration?: string): Flow
     ],
     metadata: {
       outputPath: join(outputDir, "videos", "demo.mp4"),
-      duration: 15,
+      duration: 15000,
       fps: 30,
       width: 1280,
       height: 720,
@@ -303,6 +303,17 @@ describe("SiteGenerator", () => {
       const indexContent = readFileSync(join(outputDir, "index.html"), "utf-8");
       expect(indexContent).toContain("login");
       expect(indexContent).toContain("Demo: login");
+    });
+
+    it("formats durations given in milliseconds", () => {
+      const flow = createMockFlow("login", sourceDir);
+      flow.metadata!.duration = 100000;
+      generator.addFlow(flow);
+      generator.generate();
+
+      const indexContent = readFileSync(join(outputDir, "index.html"), "utf-8");
+      expect(indexContent).toContain("1m 40s");
+      expect(indexContent).not.toContain("1666m");
     });
 
     it("per-flow page includes narration text", () => {

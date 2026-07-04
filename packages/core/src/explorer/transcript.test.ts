@@ -12,18 +12,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readFileSync, unlink, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import {
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmdirSync,
+  unlinkSync as fsUnlinkSync,
+} from "node:fs";
+import { join, basename } from "node:path";
 import { validateDemoScript } from "../schema/demoScriptSchema.js";
-import { DemoForgeError } from "../errors/index.js";
-import type { DemoScript, DemoStep } from "../types/index.js";
-import type {
-  PageState,
-  LlmActionResponse,
-  ExplorerConfig,
-  ProgressReporter,
-  ProgressEvent,
-} from "./types.js";
+import type { PageState, LlmActionResponse } from "./types.js";
 import {
   Transcript,
   ScriptAssembly,
@@ -45,7 +44,7 @@ function ensureTransientDir(): void {
 
 function cleanupTransientDir(): void {
   if (existsSync(TRANSIENT_DIR)) {
-    const files = require("node:fs").readdirSync(TRANSIENT_DIR);
+    const files = readdirSync(TRANSIENT_DIR);
     for (const file of files) {
       try {
         unlinkSync(join(TRANSIENT_DIR, file));
@@ -54,7 +53,7 @@ function cleanupTransientDir(): void {
       }
     }
     try {
-      require("node:fs").rmdirSync(TRANSIENT_DIR);
+      rmdirSync(TRANSIENT_DIR);
     } catch {
       // ignore
     }
@@ -63,7 +62,7 @@ function cleanupTransientDir(): void {
 
 function unlinkSync(path: string): void {
   try {
-    require("node:fs").unlinkSync(path);
+    fsUnlinkSync(path);
   } catch {
     // ignore
   }
@@ -96,18 +95,6 @@ function createMockPageState(
     ],
     selectors: ["button[data-testid='sign-in']"],
     formFields: [],
-  };
-}
-
-function createMockReporter(): ProgressReporter {
-  const events: ProgressEvent[] = [];
-  return {
-    report(event: ProgressEvent): void {
-      events.push(event);
-    },
-    get events() {
-      return events;
-    },
   };
 }
 
@@ -510,7 +497,7 @@ describe("Transcript", () => {
       });
 
       const filePath = saveTranscriptToFile(transcript, TRANSIENT_DIR);
-      const fileName = require("node:path").basename(filePath);
+      const fileName = basename(filePath);
 
       expect(fileName).toContain("app-example-com-login");
       expect(fileName).toMatch(/\.json$/);
@@ -1193,12 +1180,9 @@ describe("HumanConfirmUI", () => {
     });
 
     it("returns accept decision when callback returns selected flows", async () => {
-      let receivedFlows: string[] = [];
       const ui = new HumanConfirmUI({
-        onConfirm: (flows: string[]) => {
-          receivedFlows = flows;
-          return Promise.resolve({ decision: "accept", selectedFlows: ["Flow 1"] });
-        },
+        onConfirm: () =>
+          Promise.resolve({ decision: "accept", selectedFlows: ["Flow 1"] }),
       });
 
       const result = await ui.present(["Flow 1", "Flow 2"]);

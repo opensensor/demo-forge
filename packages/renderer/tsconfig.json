@@ -3,12 +3,9 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "lib": ["ES2022", "DOM"],
-    "paths": {
-      "@demoforge/core": ["./packages/core/dist/index.js"],
-      "@demoforge/browser": ["./packages/browser/dist/index.js"]
-    }
+    "lib": ["ES2022", "DOM"]
   },
+  "references": [{ "path": "../core" }, { "path": "../browser" }],
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

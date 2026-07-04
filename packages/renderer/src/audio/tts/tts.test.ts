@@ -6,12 +6,10 @@
  * captions-only fallback, and audio output modes.
  */
 
-import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
 
 vi.mock('node:fs');
 vi.mock('node:path');
@@ -36,7 +34,7 @@ const NARRATE_TEXT_2 = 'Click the submit button.';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function enableEngine(engine: any): void {
+function enableEngine(): void {
   vi.mocked(fs.existsSync).mockReturnValue(true);
   vi.mocked(path.join).mockImplementation((...args: string[]) => args.join('/'));
   vi.mocked(path.resolve).mockImplementation((p: string) => `/resolved/${p}`);
@@ -95,7 +93,7 @@ describe('TtsEngine — opt-in (disabled by default)', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
     expect(engine.isEnabled()).toBe(true);
   });
 
@@ -121,7 +119,7 @@ describe('TtsEngine — per-step narration', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
 
@@ -135,7 +133,7 @@ describe('TtsEngine — per-step narration', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result1 = await engine.synthesize(NARRATE_TEXT);
     const result2 = await engine.synthesize(NARRATE_TEXT_2);
@@ -150,7 +148,7 @@ describe('TtsEngine — per-step narration', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize('');
     expect(result).toBeDefined();
@@ -167,7 +165,7 @@ describe('TtsEngine — timing alignment', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const text = 'This is a longer piece of narration text for testing duration estimation.';
     const result = await engine.synthesize(text);
@@ -183,7 +181,7 @@ describe('TtsEngine — timing alignment', () => {
       backend: 'piper',
       targetDurationMs: 3000,
     });
-    enableEngine(engine);
+    enableEngine();
 
     const text = 'Short.';
     const result = await engine.synthesize(text);
@@ -199,7 +197,7 @@ describe('TtsEngine — timing alignment', () => {
       backend: 'piper',
       speechRate: 1.5,
     });
-    enableEngine(engine);
+    enableEngine();
 
     const text = 'Hello world.';
     const result = await engine.synthesize(text);
@@ -218,7 +216,7 @@ describe('TtsEngine — audio output modes', () => {
       backend: 'piper',
       audioOutput: 'embedded',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -232,7 +230,7 @@ describe('TtsEngine — audio output modes', () => {
       audioOutput: 'sidecar',
       outputDir: '/tmp/tts-test',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -249,7 +247,7 @@ describe('TtsEngine — captions-only fallback', () => {
       backend: 'piper',
       fallbackMode: 'captions-only',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -264,7 +262,7 @@ describe('TtsEngine — captions-only fallback', () => {
       backend: 'piper',
       fallbackMode: 'captions-only',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result.audio).toBeDefined();
@@ -282,7 +280,7 @@ describe('TtsEngine — license compliance', () => {
       backend: 'piper',
       outputDir: '/tmp/tts-license-test',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -294,7 +292,7 @@ describe('TtsEngine — license compliance', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -310,7 +308,7 @@ describe('TtsEngine — Piper backend', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -323,7 +321,7 @@ describe('TtsEngine — Piper backend', () => {
       enabled: true,
       backend: 'piper',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -340,7 +338,7 @@ describe('TtsEngine — Kokoro backend', () => {
       enabled: true,
       backend: 'kokoro',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -353,7 +351,7 @@ describe('TtsEngine — Kokoro backend', () => {
       enabled: true,
       backend: 'kokoro',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -374,7 +372,7 @@ describe('TtsEngine — OpenAI-compatible cloud backend', () => {
         model: 'tts-1',
       },
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();
@@ -393,7 +391,7 @@ describe('TtsEngine — OpenAI-compatible cloud backend', () => {
       },
       voice: 'alloy',
     });
-    enableEngine(engine);
+    enableEngine();
 
     const result = await engine.synthesize(NARRATE_TEXT);
     expect(result).toBeDefined();

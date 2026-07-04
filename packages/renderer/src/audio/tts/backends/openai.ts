@@ -9,6 +9,7 @@ import type { TtsBackend, BackendSynthesizeOptions, SynthesisResult, OpenAiTtsCo
 
 export class OpenAiBackend implements TtsBackend {
   private config: OpenAiTtsConfig;
+  private availabilityCache?: boolean;
 
   constructor(config: OpenAiTtsConfig) {
     this.config = config;
@@ -19,18 +20,27 @@ export class OpenAiBackend implements TtsBackend {
   }
 
   async isAvailable(): Promise<boolean> {
+    // Cache the probe result so we don't hit the API on every synthesize call
+    if (this.availabilityCache !== undefined) {
+      return this.availabilityCache;
+    }
+
     try {
-      const response = await fetch(`${this.config.baseUrl}/health`, {
+      // Probe the models endpoint (relative to the configured baseUrl) —
+      // the OpenAI API has no /health endpoint.
+      const response = await fetch(`${this.config.baseUrl}/models`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
         },
         signal: AbortSignal.timeout(5000),
       });
-      return response.ok;
+      this.availabilityCache = response.ok;
     } catch {
-      return false;
+      this.availabilityCache = false;
     }
+
+    return this.availabilityCache;
   }
 
   async synthesize(text: string, options?: BackendSynthesizeOptions): Promise<SynthesisResult> {

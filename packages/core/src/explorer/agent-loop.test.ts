@@ -12,29 +12,21 @@
  * - Progress reporter shows turn-by-turn status
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { validateDemoScript } from "../schema/demoScriptSchema.js";
 import type {
-  ExplorerConfig,
   ExplorerActionType,
   LlmActionResponse,
   LlmClient,
   ProgressReporter,
   ProgressEvent,
-  ExplorationTurn,
-  ExplorationTranscript,
-  ExplorationResult,
   GuardrailsConfig,
 } from "./types.js";
 import { ExplorerAgent } from "./agent-loop.js";
-import type { BrowserSession } from "@demoforge/browser";
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
-function createMockLlmClient(
-  responses: LlmActionResponse[],
-  blockActions: string[] = []
-): LlmClient {
+function createMockLlmClient(responses: LlmActionResponse[]): LlmClient {
   let callIndex = 0;
   return {
     async sendAction(
@@ -144,47 +136,6 @@ function createMockBrowser() {
     async close(): Promise<void> {
       // no-op for tests
     },
-  };
-}
-
-function createMockPageState(
-  url = "https://example.com",
-  title = "Example"
-): Record<string, unknown> {
-  return {
-    url,
-    title,
-    viewport: { width: 1280, height: 720 },
-    axTree: [
-      {
-        role: "heading",
-        name: "Welcome",
-        tag: "h1",
-        depth: 1,
-        interactive: false,
-      },
-      {
-        role: "button",
-        name: "Sign In",
-        tag: "button",
-        depth: 2,
-        interactive: true,
-        selector: "button[data-testid='sign-in']",
-      },
-      {
-        role: "link",
-        name: "Learn More",
-        tag: "a",
-        depth: 2,
-        interactive: true,
-        selector: "a[data-testid='learn-more']",
-      },
-    ],
-    selectors: [
-      "button[data-testid='sign-in']",
-      "a[data-testid='learn-more']",
-    ],
-    formFields: [],
   };
 }
 
@@ -716,6 +667,44 @@ describe("ExplorerAgent", () => {
       expect(validation.success).toBe(true);
     });
 
+    it("accepts narration text from params.text", async () => {
+      const reporter = createMockReporter();
+      const mockBrowser = createMockBrowser();
+
+      const responses: LlmActionResponse[] = [
+        {
+          action: "narrate",
+          params: { text: "This is a locally generated narration line." },
+          notes: "Add intro narration",
+        },
+        { action: "done", params: {}, notes: "Done" },
+      ];
+
+      const llmClient = createMockLlmClient(responses);
+
+      const agent = new ExplorerAgent({
+        url: "https://example.com",
+        goal: "Test narration params text",
+        maxSteps: 20,
+        maxTime: 60000,
+        viewport: { width: 1280, height: 720, scale: 1 },
+        reporter,
+        llmClient,
+        scriptTemplate: {
+          title: "Narration Param Text Test",
+          narration_mode: "none",
+        },
+        requireConfirmation: false,
+        browser: mockBrowser as any,
+      });
+
+      const result = await agent.run();
+
+      const narrateSteps = result.script.steps.filter((s) => "narrate" in s);
+      expect(narrateSteps[0].narrate).toBe("This is a locally generated narration line.");
+      expect(result.transcript.turns.some((t) => t.error)).toBe(false);
+    });
+
     it("includes a done step at the end of the script", async () => {
       const reporter = createMockReporter();
       const mockBrowser = createMockBrowser();
@@ -752,6 +741,99 @@ describe("ExplorerAgent", () => {
       const doneSteps = result.script.steps.filter((s) => "done" in s);
       expect(doneSteps.length).toBe(1);
       expect(doneSteps[0].done).toBe(true);
+    });
+
+    it("blocks done while a requested report modal is still open", async () => {
+      const reporter = createMockReporter();
+      const mockBrowser = createMockBrowser() as ReturnType<typeof createMockBrowser> & {
+        page?: unknown;
+      };
+      let modalOpen = false;
+
+      const originalClick = mockBrowser.click.bind(mockBrowser);
+      mockBrowser.click = async (selector: string): Promise<void> => {
+        await originalClick(selector);
+        if (selector.includes("Block + Report")) modalOpen = true;
+        if (selector === "#abuse-report-submit") modalOpen = false;
+      };
+      mockBrowser.page = {
+        waitForTimeout: vi.fn(async () => {}),
+        waitForFunction: vi.fn(async () => {}),
+        evaluate: vi.fn(async (fn: unknown) => {
+          const source = String(fn);
+          if (source.includes("modalNodes")) {
+            return modalOpen
+              ? [{
+                  title: "Send Abuse Report",
+                  text: "Send Abuse Report\nRecipients\nSend Report",
+                  actions: ["Cancel", "Send Report"],
+                  selectors: ["#abuse-report-submit"],
+                }]
+              : [];
+          }
+          if (source.includes("querySelectorAll(") && source.includes("button, a[href]")) {
+            return modalOpen
+              ? [{
+                  tag: "button",
+                  id: "abuse-report-submit",
+                  type: "button",
+                  role: "",
+                  name: "Send Report",
+                  text: "Send Report",
+                  value: "",
+                  placeholder: "",
+                  required: false,
+                  disabled: false,
+                }]
+              : [];
+          }
+          if (source.includes("document.body.innerText")) {
+            return modalOpen ? "Send Abuse Report\nRecipients\nSend Report" : "Incident queue";
+          }
+          if (source.includes("scrollIntoView")) return modalOpen ? "abuse-report-modal" : "";
+          return null;
+        }),
+      };
+
+      const responses: LlmActionResponse[] = [
+        {
+          action: "click",
+          params: { selector: 'role=button[name="Block + Report" i]' },
+          notes: "Open the report modal",
+        },
+        { action: "done", params: {}, notes: "Incorrectly stop after opening modal" },
+        {
+          action: "click",
+          params: { selector: "#abuse-report-submit" },
+          notes: "Send the report",
+        },
+        { action: "done", params: {}, notes: "Report sent" },
+      ];
+
+      const agent = new ExplorerAgent({
+        url: "https://example.com",
+        goal: "Block the incident, open the report modal, approve and send the abuse report",
+        maxSteps: 20,
+        maxTime: 60000,
+        viewport: { width: 1280, height: 720, scale: 1 },
+        reporter,
+        llmClient: createMockLlmClient(responses),
+        scriptTemplate: {
+          title: "Report Modal Test",
+          narration_mode: "none",
+        },
+        requireConfirmation: false,
+        browser: mockBrowser as any,
+      });
+
+      const result = await agent.run();
+
+      expect(result.success).toBe(true);
+      expect(mockBrowser.clicks).toContain("#abuse-report-submit");
+      expect(result.transcript.blockedTurns).toBe(1);
+      expect(
+        result.transcript.turns.some((turn) => turn.blockReason?.includes("modal/dialog is still open"))
+      ).toBe(true);
     });
   });
 
@@ -1005,9 +1087,7 @@ describe("ExplorerAgent", () => {
       ];
 
       const llmClient = createMockLlmClient(responses);
-      let capturedSystemPrompt = "";
 
-      const originalSendAction = llmClient.sendAction.bind(llmClient);
       // We can't easily intercept, so we check the transcript instead
       const agent = new ExplorerAgent({
         url: "https://example.com",
