@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Kokoro TTS shim — see kokoro_cli.py. Set up with tools/tts/setup.sh.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$DIR/.venv/bin/python" -I "$DIR/kokoro_cli.py" "$@"

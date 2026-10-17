@@ -25,6 +25,7 @@ interface MockBrowserSession {
   press: ReturnType<typeof vi.fn>;
   wait_for: ReturnType<typeof vi.fn>;
   screenshot: ReturnType<typeof vi.fn>;
+  type: ReturnType<typeof vi.fn>;
 }
 
 function createMockBrowser(): MockBrowserSession & BrowserSession {
@@ -39,6 +40,15 @@ function createMockBrowser(): MockBrowserSession & BrowserSession {
     press: vi.fn().mockResolvedValue(undefined),
     wait_for: vi.fn().mockResolvedValue(undefined),
     screenshot: vi.fn().mockResolvedValue(Buffer.from('screenshot')),
+    configureContext: vi.fn(),
+    addInitScript: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(null),
+    boundingBox: vi.fn().mockResolvedValue({ x: 10, y: 10, width: 100, height: 30 }),
+    scrollIntoView: vi.fn().mockResolvedValue(undefined),
+    mouseMove: vi.fn().mockResolvedValue(undefined),
+    type: vi.fn().mockResolvedValue(undefined),
+    reload: vi.fn().mockResolvedValue(undefined),
+    storageState: vi.fn().mockResolvedValue({ cookies: [], origins: [] }),
   } as unknown as MockBrowserSession & BrowserSession;
 }
 
@@ -115,7 +125,8 @@ describe('Renderer — step execution', () => {
     const result = await renderer.render();
 
     expect(result.status).toBe('success');
-    expect(mock.fill).toHaveBeenCalledWith({ role: 'textbox', name: 'Email' }, 'user@example.com');
+    // Natural typing (the default) types key-by-key rather than filling.
+    expect(mock.type).toHaveBeenCalledWith({ role: 'textbox', name: 'Email' }, 'user@example.com', 55);
   });
 
   it('executes select step', async () => {
@@ -258,7 +269,7 @@ describe('Renderer — step execution', () => {
 
     expect(result.status).toBe('success');
     expect(result.stepCount).toBe(7);
-    expect(mock.fill).toHaveBeenCalledTimes(2);
+    expect(mock.type).toHaveBeenCalledTimes(2);
     expect(mock.click).toHaveBeenCalled();
     expect(mock.wait_for).toHaveBeenCalled();
   });

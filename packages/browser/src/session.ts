@@ -6,9 +6,10 @@
  */
 
 import { chromium, firefox, webkit } from 'playwright';
-import type { CDPSession } from 'playwright';
+import type { BrowserContextOptions, CDPSession } from 'playwright';
 
 import type {
+  BoundingBox,
   BrowserLaunchOptions,
   BrowserState,
   CDPCommand,
@@ -22,6 +23,7 @@ import type {
   ScreenshotOptions,
   WaitForOptions,
   VirtualTimeOptions,
+  StorageState,
   PlaywrightBrowser,
   PlaywrightContext,
   PlaywrightPage,
@@ -43,6 +45,8 @@ export type {
   ScreenshotOptions,
   WaitForOptions,
   VirtualTimeOptions,
+  BoundingBox,
+  StorageState,
 };
 
 export { resolveSelector };
@@ -56,13 +60,21 @@ export class BrowserSession {
   private _cdpSession: CDPSession | null = null;
   private _cdpSessionPage: PlaywrightPage | null = null;
   private _screencastActive = false;
-  private _options: Required<Omit<BrowserLaunchOptions, 'recordVideo' | 'forbidHostDisplay'>>;
+  private _options: Required<
+    Omit<BrowserLaunchOptions, 'recordVideo' | 'forbidHostDisplay' | 'storageState' | 'colorScheme' | 'initScripts'>
+  >;
   private _recordVideo: BrowserLaunchOptions['recordVideo'];
+  private _storageState: StorageState | undefined;
+  private _colorScheme: BrowserLaunchOptions['colorScheme'];
+  private _initScripts: string[];
   private _forbidHostDisplay: boolean;
   private _videoPath: string | null = null;
 
   constructor(options: BrowserLaunchOptions = {}) {
     this._recordVideo = options.recordVideo;
+    this._storageState = options.storageState;
+    this._colorScheme = options.colorScheme;
+    this._initScripts = [...(options.initScripts ?? [])];
     this._forbidHostDisplay = options.forbidHostDisplay ?? false;
     this._options = {
       browser: options.browser ?? 'chromium',
@@ -213,29 +225,25 @@ export class BrowserSession {
   }
 
   async click(selector: Selector, options?: { force?: boolean }): Promise<void> {
-    const page = this._ensurePage();
-    await page.click(resolveSelector(selector), {
+    await this._target(selector).click({
       timeout: this._options.timeout,
       ...options,
     });
   }
 
   async hover(selector: Selector): Promise<void> {
-    const page = this._ensurePage();
-    await page.hover(resolveSelector(selector), { timeout: this._options.timeout });
+    await this._target(selector).hover({ timeout: this._options.timeout });
   }
 
   async fill(selector: Selector, value: string, options?: FillOptions): Promise<void> {
-    const page = this._ensurePage();
-    await page.fill(resolveSelector(selector), value, {
+    await this._target(selector).fill(value, {
       timeout: this._options.timeout,
       ...options,
     });
   }
 
   async select(selector: Selector, value: string): Promise<void> {
-    const page = this._ensurePage();
-    await page.selectOption(resolveSelector(selector), value, {
+    await this._target(selector).selectOption(value, {
       timeout: this._options.timeout,
     });
   }
@@ -305,6 +313,75 @@ export class BrowserSession {
         });
       }, duration);
     }
+  }
+
+  /**
+   * Set context-level options that are only honored at launch (storage state
+   * from a prior login, emulated color scheme). Throws once launched.
+   */
+  configureContext(options: { storageState?: StorageState; colorScheme?: 'light' | 'dark' }): void {
+    if (this._context) {
+      throw new Error('configureContext() must be called before launch()');
+    }
+    if (options.storageState) this._storageState = options.storageState;
+    if (options.colorScheme) this._colorScheme = options.colorScheme;
+  }
+
+  /** Click at viewport coordinates with the real mouse. */
+  async clickAt(x: number, y: number): Promise<void> {
+    const page = this._ensurePage();
+    await page.mouse.click(x, y);
+  }
+
+  /** Move the real mouse (so :hover styles apply) in `steps` increments. */
+  async mouseMove(x: number, y: number, steps = 1): Promise<void> {
+    const page = this._ensurePage();
+    await page.mouse.move(x, y, { steps });
+  }
+
+  /** Type text key-by-key into an element, `delay` ms between keystrokes. */
+  async type(selector: Selector, text: string, delay = 0): Promise<void> {
+    const locator = this._target(selector);
+    await locator.fill('', { timeout: this._options.timeout });
+    await locator.pressSequentially(text, { delay, timeout: this._options.timeout + text.length * delay });
+  }
+
+  /** Bounding box of the first element matching `selector`, or null if not visible. */
+  async boundingBox(selector: Selector): Promise<BoundingBox | null> {
+    const locator = this._target(selector);
+    await locator.waitFor({ state: 'visible', timeout: this._options.timeout });
+    return locator.boundingBox();
+  }
+
+  /** Scroll the first element matching `selector` into view if needed. */
+  async scrollIntoView(selector: Selector): Promise<void> {
+    await this._target(selector).scrollIntoViewIfNeeded({ timeout: this._options.timeout });
+  }
+
+  /** Evaluate a JavaScript expression in the current page and return its (awaited) value. */
+  async evaluate<T = unknown>(expression: string): Promise<T> {
+    const page = this._ensurePage();
+    return page.evaluate(expression) as Promise<T>;
+  }
+
+  /**
+   * Register a script to run in every new document of this session. Applies
+   * to the current page only after its next navigation; evaluate it too if
+   * it must take effect immediately.
+   */
+  async addInitScript(source: string): Promise<void> {
+    this._initScripts.push(source);
+    if (this._context) {
+      await this._context.addInitScript(source);
+    }
+  }
+
+  /** Cookies and localStorage of the session, for reuse via `storageState`. */
+  async storageState(): Promise<StorageState> {
+    if (!this._context) {
+      throw new Error('Browser context not created. Call launch() first.');
+    }
+    return (await this._context.storageState()) as unknown as StorageState;
   }
 
   async wait_for(options: WaitForOptions): Promise<void> {
@@ -529,7 +606,15 @@ export class BrowserSession {
       ignoreHTTPSErrors: true,
       javaScriptEnabled: true,
       recordVideo: this._recordVideo,
+      ...(this._storageState
+        ? { storageState: this._storageState as BrowserContextOptions['storageState'] }
+        : {}),
+      ...(this._colorScheme ? { colorScheme: this._colorScheme } : {}),
     });
+
+    for (const source of this._initScripts) {
+      await this._context.addInitScript(source);
+    }
   }
 
   private _assertHostDisplayPolicy(): void {
@@ -556,6 +641,15 @@ export class BrowserSession {
     }
 
     this._page = await this._context.newPage();
+  }
+
+  /**
+   * The element an action should target: the first *visible* match. Apps
+   * often keep hidden duplicates (collapsed menus, inactive tabs, offscreen
+   * templates) that would otherwise be picked and time out.
+   */
+  private _target(selector: Selector) {
+    return this._ensurePage().locator(resolveSelector(selector)).filter({ visible: true }).first();
   }
 
   private _ensurePage(): PlaywrightPage {

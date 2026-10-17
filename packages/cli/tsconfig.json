@@ -12,6 +12,9 @@
       "path": "../browser"
     },
     {
+      "path": "../renderer"
+    },
+    {
       "path": "../site"
     },
     {

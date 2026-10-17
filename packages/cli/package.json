@@ -2,7 +2,7 @@
   "name": "@demoforge/cli",
   "version": "1.0.0",
   "private": true,
-  "description": "DemoForge CLI — command-line interface",
+  "description": "DemoForge CLI \u2014 command-line interface",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -19,6 +19,7 @@
   "dependencies": {
     "@demoforge/browser": "1.0.0",
     "@demoforge/core": "1.0.0",
+    "@demoforge/renderer": "1.0.0",
     "@demoforge/site": "1.0.0",
     "@demoforge/studio": "1.0.0",
     "commander": "^12.0.0",

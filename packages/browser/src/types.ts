@@ -45,12 +45,40 @@ export interface BrowserLaunchOptions {
    * `BrowserSession.videoPath` after `close()` resolves.
    */
   recordVideo?: { dir: string; size?: { width: number; height: number } };
+  /**
+   * Cookies and origin storage to start the context with — typically the
+   * result of `storageState()` from an earlier (unrecorded) login session.
+   */
+  storageState?: StorageState;
+  /** Emulated prefers-color-scheme for the context. */
+  colorScheme?: 'light' | 'dark';
+  /** Scripts evaluated in every page before any of the page's own scripts. */
+  initScripts?: string[];
+}
+
+/** Serialized cookies + localStorage, as produced by Playwright's storageState(). */
+export interface StorageState {
+  cookies: Array<Record<string, unknown>>;
+  origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
+}
+
+/** Element bounding box in CSS pixels relative to the viewport. */
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 // ─── Selector Types ─────────────────────────────────────────────────────────
 
 export type Selector =
-  string | { role: string; name?: string } | { css: string } | { xpath: string };
+  | string
+  | { role: string; name?: string }
+  | { label: string }
+  | { text: string }
+  | { css: string }
+  | { xpath: string };
 
 export function resolveSelector(selector: Selector): string {
   if (typeof selector === 'string') {
@@ -74,13 +102,22 @@ export function resolveSelector(selector: Selector): string {
 
   if ('role' in selector) {
     if (selector.name) {
-      const escapedName = selector.name.replace(/"/g, '\\"');
-      // The `i` flag makes name matching case-insensitive, mirroring
-      // getByRole()'s default non-exact matching — LLM-generated scripts
-      // rarely reproduce accessible-name casing exactly.
-      return `role=${selector.role}[name="${escapedName}" i]`;
+      // A quoted name is a full-string match, which fails on buttons whose
+      // accessible name includes extra text (badges, counts, icons). Use a
+      // case-insensitive regex instead — getByRole()'s default substring
+      // matching — since scripts rarely reproduce accessible names exactly.
+      const pattern = selector.name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      return `role=${selector.role}[name=/${pattern}/i]`;
     }
     return `role=${selector.role}`;
+  }
+
+  if ('label' in selector) {
+    return `internal:label=${JSON.stringify(selector.label)}i`;
+  }
+
+  if ('text' in selector) {
+    return `text=${selector.text}`;
   }
 
   if ('css' in selector) {

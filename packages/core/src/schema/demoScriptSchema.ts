@@ -118,11 +118,16 @@ export const selectConfigSchema = z.object({
 export const screenshotConfigSchema = z.object({
   name: z.string().optional(),
   annotate: z.array(annotationTargetSchema).optional(),
+  selector: selectorSchema.optional(),
+  full_page: z.boolean().optional(),
 });
 
 /** Scroll config. */
 export const scrollConfigSchema = z.object({
-  amount: z.number(),
+  amount: z.number().optional(),
+  to: selectorSchema.optional(),
+}).refine((c) => c.amount !== undefined || c.to !== undefined, {
+  message: "scroll needs either amount or to",
 });
 
 /** Press config. */
@@ -145,24 +150,28 @@ export const gotoStepSchema = z.object({
 export const clickStepSchema = z.object({
   click: selectorSchema,
   effect: effectSchema.optional(),
+  callout: z.string().optional(),
 }).strict();
 
 /** Hover step. */
 export const hoverStepSchema = z.object({
   hover: selectorSchema,
   effect: effectSchema.optional(),
+  callout: z.string().optional(),
 }).strict();
 
 /** Fill step. */
 export const fillStepSchema = z.object({
   fill: fillConfigSchema,
   effect: effectSchema.optional(),
+  callout: z.string().optional(),
 }).strict();
 
 /** Select step. */
 export const selectStepSchema = z.object({
   select: selectConfigSchema,
   effect: effectSchema.optional(),
+  callout: z.string().optional(),
 }).strict();
 
 /** Press step. */
@@ -181,11 +190,13 @@ export const scrollStepSchema = z.object({
 export const waitForStepSchema = z.object({
   wait_for: waitForConditionSchema,
   effect: effectSchema.optional(),
+  callout: z.string().optional(),
 }).strict();
 
 /** Narrate step. */
 export const narrateStepSchema = z.object({
   narrate: z.string(),
+  wait: z.boolean().optional(),
 }).strict();
 
 /** Screenshot step. */
@@ -213,6 +224,16 @@ export const pauseStepSchema = z.object({
   pause: z.number().positive(),
 }).strict();
 
+/** Set localStorage step. */
+export const setStorageStepSchema = z.object({
+  set_storage: z.record(z.string(), z.string()),
+}).strict();
+
+/** Reload step. */
+export const reloadStepSchema = z.object({
+  reload: z.literal(true),
+}).strict();
+
 /**
  * Union of all step schemas.
  * Each variant is strict so extra keys are rejected.
@@ -232,6 +253,8 @@ export const demoStepSchema = z.union([
   markFlowEndStepSchema,
   doneStepSchema,
   pauseStepSchema,
+  setStorageStepSchema,
+  reloadStepSchema,
 ]);
 
 /** Viewport config for render matrix. */
@@ -258,6 +281,14 @@ export const demoScriptSchema = z.object({
   narration_mode: narrationModeSchema,
   steps: z.array(demoStepSchema).min(0),
   render_matrix: renderMatrixSchema.optional(),
+  setup: z.array(demoStepSchema).optional(),
+  init: z.object({
+    local_storage: z.record(z.string(), z.string()).optional(),
+    color_scheme: z.enum(["light", "dark"]).optional(),
+  }).strict().optional(),
+  cursor: z.boolean().optional(),
+  voice: z.string().optional(),
+  redact: z.array(z.string().min(1)).optional(),
 });
 
 /**

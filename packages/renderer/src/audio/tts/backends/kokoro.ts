@@ -68,7 +68,7 @@ export class KokoroBackend implements TtsBackend {
       throw new Error(`Kokoro model not found: ${modelFile}`);
     }
 
-    const voice = options?.voice ?? DEFAULT_KOKORO_VOICE;
+    const voice = options?.voice || DEFAULT_KOKORO_VOICE;
     const speed = options?.speed ?? 1.0;
 
     // Kokoro reads text from stdin, outputs audio to stdout
@@ -110,6 +110,7 @@ export class KokoroBackend implements TtsBackend {
   private resolveKokoroBinary(): string | null {
     // Try PATH first, then vendored and common install locations
     const candidates = [
+      process.env.DEMOFORGE_KOKORO_BIN ?? null,
       findInPath('kokoro'),
       path.join(MODULE_DIR, '..', '..', 'vendor', 'kokoro', 'kokoro'),
       '/usr/local/bin/kokoro',
@@ -127,6 +128,11 @@ export class KokoroBackend implements TtsBackend {
   private resolveModelFile(): string | null {
     if (this.modelPath && fs.existsSync(this.modelPath)) {
       return this.modelPath;
+    }
+
+    const envModel = process.env.DEMOFORGE_KOKORO_MODEL;
+    if (envModel && fs.existsSync(envModel)) {
+      return envModel;
     }
 
     const modelCandidates = [

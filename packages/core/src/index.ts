@@ -13,6 +13,7 @@ export * from "./types/index.js";
 
 // Schemas
 export * from "./schema/demoScriptSchema.js";
+export * from "./schema/loadDemoScript.js";
 
 // Errors
 export * from "./errors/index.js";

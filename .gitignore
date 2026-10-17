@@ -56,3 +56,6 @@ Desktop.ini
 test-output/
 test-results/
 playwright-report/
+tools/tts/.venv/
+tools/tts/models/
+demos/**/*.transcript.json

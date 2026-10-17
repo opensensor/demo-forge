@@ -21,5 +21,7 @@ export type {
   ScreenshotOptions,
   WaitForOptions,
   VirtualTimeOptions,
+  BoundingBox,
+  StorageState,
 } from './types.js';
 export { resolveSelector } from './types.js';

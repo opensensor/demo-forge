@@ -102,6 +102,27 @@ export interface RenderConfig {
   computeAxDiffOnFailure?: boolean;
   /** Number of stability render attempts. Default: 3. */
   stabilityAttempts?: number;
+  /**
+   * Pre-computed narration clips keyed by step index (see prepareNarration).
+   * Without them, narrate steps hold for an estimated reading time.
+   */
+  narration?: Map<number, { text: string; durationMs: number; audioPath?: string }>;
+  /** Delay between keystrokes for `typing: natural` fills, in ms. Default: 55. */
+  typingDelay?: number;
+  /** Factory for the unrecorded browser used by `setup` steps. */
+  setupBrowserFactory?: () => import('@demoforge/browser').BrowserSession;
+  /** Progress callback for human-readable step logging. */
+  onLog?: (message: string) => void;
+}
+
+/** A narration line as it played during replay. */
+export interface NarrationEvent {
+  stepIndex: number;
+  text: string;
+  /** Start time relative to the beginning of the raw recording. */
+  atMs: number;
+  durationMs: number;
+  audioPath?: string;
 }
 
 // ─── Step Result ─────────────────────────────────────────────────────────────
@@ -162,4 +183,13 @@ export interface RenderResult {
   outputDir?: string;
   warnings: string[];
   cspDetected?: boolean;
+  /** Narration lines with their timing in the raw recording. */
+  narration?: NarrationEvent[];
+  /**
+   * Offset into the raw recording where the demo content begins (after the
+   * first navigation settled). Post-production trims everything before it.
+   */
+  contentStartMs?: number;
+  /** Paths of screenshots written during the render. */
+  screenshots?: string[];
 }

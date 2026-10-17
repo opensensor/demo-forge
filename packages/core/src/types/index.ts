@@ -69,11 +69,18 @@ export interface SelectConfig {
 export interface ScreenshotConfig {
   name?: string;
   annotate?: AnnotationTarget[];
+  /** Clip the screenshot to this element instead of the viewport. */
+  selector?: Selector;
+  /** Capture the full scrollable page. */
+  full_page?: boolean;
 }
 
 /** Scroll action configuration. */
 export interface ScrollConfig {
-  amount: number;
+  /** Pixels to scroll vertically (positive = down). */
+  amount?: number;
+  /** Smoothly scroll this element into view instead of by a fixed amount. */
+  to?: Selector;
 }
 
 /** Press action configuration. */
@@ -116,7 +123,9 @@ export type ActionType =
   | "mark_flow_start"
   | "mark_flow_end"
   | "done"
-  | "pause";
+  | "pause"
+  | "set_storage"
+  | "reload";
 
 /** Navigation step. */
 export interface GotoStep {
@@ -128,24 +137,32 @@ export interface GotoStep {
 export interface ClickStep {
   click: Selector;
   effect?: Effect;
+  /** Label shown next to the target while the step plays. */
+  callout?: string;
 }
 
 /** Hover step. */
 export interface HoverStep {
   hover: Selector;
   effect?: Effect;
+  /** Label shown next to the target while the step plays. */
+  callout?: string;
 }
 
 /** Fill step. */
 export interface FillStep {
   fill: FillConfig;
   effect?: Effect;
+  /** Label shown next to the target while the step plays. */
+  callout?: string;
 }
 
 /** Select step. */
 export interface SelectStep {
   select: SelectConfig;
   effect?: Effect;
+  /** Label shown next to the target while the step plays. */
+  callout?: string;
 }
 
 /** Press step. */
@@ -164,11 +181,18 @@ export interface ScrollStep {
 export interface WaitForStep {
   wait_for: WaitForCondition;
   effect?: Effect;
+  /** Label shown next to the target while the step plays. */
+  callout?: string;
 }
 
 /** Narrate step. */
 export interface NarrateStep {
   narrate: string;
+  /**
+   * Hold the replay until the narration finishes speaking (or, without TTS,
+   * until it has been on screen long enough to read). Default: true.
+   */
+  wait?: boolean;
 }
 
 /** Screenshot step. */
@@ -196,6 +220,16 @@ export interface PauseStep {
   pause: number;
 }
 
+/** Write localStorage entries on the current page's origin. */
+export interface SetStorageStep {
+  set_storage: Record<string, string>;
+}
+
+/** Reload the current page. */
+export interface ReloadStep {
+  reload: true;
+}
+
 /**
  * Discriminated union of all step types.
  * Each step has exactly one action key.
@@ -214,7 +248,9 @@ export type DemoStep =
   | MarkFlowStartStep
   | MarkFlowEndStep
   | DoneStep
-  | PauseStep;
+  | PauseStep
+  | SetStorageStep
+  | ReloadStep;
 
 /** Narration configuration. */
 export interface NarrationConfig {
@@ -256,6 +292,33 @@ export interface DemoScript {
   narration_mode: NarrationMode;
   steps: DemoStep[];
   render_matrix?: RenderMatrix;
+  /**
+   * Steps run in a separate, unrecorded browser before the demo (e.g. login).
+   * Cookies and storage they produce carry over into the recorded session.
+   */
+  setup?: DemoStep[];
+  /** Browser state applied before any page script runs. */
+  init?: ScriptInit;
+  /** Show the synthetic cursor and click ripples. Default: true. */
+  cursor?: boolean;
+  /** TTS voice for narration (backend-specific, e.g. Kokoro "af_heart"). */
+  voice?: string;
+  /**
+   * CSS selectors whose elements are blurred in every frame and screenshot
+   * (credentials, internal URLs, personal data).
+   */
+  redact?: string[];
+}
+
+/** Browser state applied before any page script runs. */
+export interface ScriptInit {
+  /**
+   * localStorage entries seeded before page scripts run. Keys already set
+   * (e.g. by a `set_storage` step) are left alone.
+   */
+  local_storage?: Record<string, string>;
+  /** Emulated prefers-color-scheme. */
+  color_scheme?: "light" | "dark";
 }
 
 /**
@@ -315,4 +378,12 @@ export function isDoneStep(step: DemoStep): step is DoneStep {
 
 export function isPauseStep(step: DemoStep): step is PauseStep {
   return "pause" in step;
+}
+
+export function isSetStorageStep(step: DemoStep): step is SetStorageStep {
+  return "set_storage" in step;
+}
+
+export function isReloadStep(step: DemoStep): step is ReloadStep {
+  return "reload" in step;
 }

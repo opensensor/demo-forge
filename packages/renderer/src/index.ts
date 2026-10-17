@@ -2,7 +2,7 @@
  * DemoForge renderer package — replay engine and video capture.
  */
 
-export { Renderer, RenderError } from './replay/renderer.js';
+export { Renderer, RenderError, redactionScript } from './replay/renderer.js';
 export { stabilityDetect, type StabilityResult } from './replay/stability.js';
 export { detectCSP, type CSPResult } from './replay/csp.js';
 export { accessibilityDiff } from './replay/accessibility.js';
@@ -143,3 +143,28 @@ export type {
   DiffReport,
   MatrixRenderOptions,
 } from './matrix/types.js';
+
+// ─── Stage, narration, post-production ─────────────────────────────────────────
+
+export { Stage, type StageOptions } from './stage/stage.js';
+export { STAGE_SCRIPT } from './stage/stage-script.js';
+export {
+  prepareNarration,
+  readingTimeMs,
+  wavDurationMs,
+  type NarrationClip,
+  type NarrationOptions,
+} from './narration/narration.js';
+export {
+  produceDeliverables,
+  captionEntries,
+  type DeliverableFormat,
+  type ProduceOptions,
+  type ProduceResult,
+} from './produce/produce.js';
+export type { NarrationEvent } from './replay/types.js';
+export {
+  renderDemo,
+  type RenderDemoOptions,
+  type RenderDemoResult,
+} from './produce/render-demo.js';

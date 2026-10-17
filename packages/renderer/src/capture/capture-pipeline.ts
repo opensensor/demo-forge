@@ -9,7 +9,7 @@
 
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { copyFile, rename, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import type {
@@ -66,6 +66,18 @@ const QUALITY_PRESETS: Record<string, QualityPresetConfig> = {
 };
 
 // ─── CapturePipeline ─────────────────────────────────────────────────────────
+
+/**
+ * ffmpeg scale filter for a target size. With both dimensions the frame is
+ * letterboxed to exactly that size; with one, the other follows the aspect
+ * ratio (rounded to an even number, which most codecs require).
+ */
+function scaleFilterFor(width?: number, height?: number): string {
+  if (width && height) {
+    return `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
+  }
+  return `scale=${width ?? -2}:${height ?? -2}:flags=lanczos`;
+}
 
 export class CapturePipeline {
   private _ffmpegPath: string;
@@ -228,12 +240,7 @@ export class CapturePipeline {
     });
 
     // Build scale filter portion conditionally
-    let scaleFilter = '';
-    if (needsScale) {
-      const w = options.width ?? -1;
-      const h = options.height ?? -1;
-      scaleFilter = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,`;
-    }
+    const scaleFilter = needsScale ? `${scaleFilterFor(options.width, options.height)},` : '';
 
     // Single-pass palette-based GIF encoding using split/palettegen/paletteuse
     const filterComplex = `[0:v]fps=${targetFps},${scaleFilter}split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a`;
@@ -268,8 +275,9 @@ export class CapturePipeline {
         warnings,
       );
       if (reducedPath) {
-        finalPath = reducedPath;
-        const reducedStat = await stat(reducedPath).catch(() => null);
+        await rename(reducedPath, outputPath).catch(() => copyFile(reducedPath, outputPath));
+        finalPath = outputPath;
+        const reducedStat = await stat(finalPath).catch(() => null);
         finalFileSize = reducedStat?.size ?? finalFileSize;
       } else {
         warnings.push('Could not auto-reduce GIF to meet size budget, keeping original');
@@ -311,7 +319,6 @@ export class CapturePipeline {
     warnings: string[],
   ): Promise<string | null> {
     let scale = options.width ?? 320;
-    const height = options.height ?? 240;
     let fps = options.fps ?? 10;
     let attempts = 0;
     const maxAttempts = 5;
@@ -326,7 +333,7 @@ export class CapturePipeline {
         fps = Math.max(5, Math.round(fps * 0.75));
       }
 
-      const scaleFilter = `scale=${scale}:${height}:force_original_aspect_ratio=decrease,pad=${scale}:${height}:(ow-iw)/2:(oh-ih)/2,`;
+      const scaleFilter = `${scaleFilterFor(scale, options.height ? Math.round((options.height * scale) / (options.width ?? scale)) : undefined)},`;
       const filterComplex = `[0:v]fps=${fps},${scaleFilter}split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a`;
 
       const gifArgs: string[] = [
@@ -345,7 +352,7 @@ export class CapturePipeline {
 
       if (result.fileSize <= maxSizeBytes) {
         warnings.push(
-          `GIF auto-reduced to ${scale}x${height} @ ${fps}fps (${result.fileSize} bytes) to meet ${maxSizeBytes} byte budget`,
+          `GIF auto-reduced to width ${scale} @ ${fps}fps (${result.fileSize} bytes) to meet ${maxSizeBytes} byte budget`,
         );
         return outputPath;
       }
@@ -409,9 +416,7 @@ export class CapturePipeline {
 
     // Scale to target resolution
     if (options.width || options.height) {
-      const w = options.width ?? '-1';
-      const h = options.height ?? '-1';
-      args.push('-vf', `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`);
+      args.push('-vf', scaleFilterFor(options.width, options.height));
     }
 
     // Apply target fps

@@ -60,6 +60,15 @@ function createMockBrowser(): Partial<BrowserSession> {
     wait_for: vi.fn().mockResolvedValue(undefined),
     screenshot: vi.fn().mockResolvedValue(mockPng),
     executeCDP: vi.fn().mockResolvedValue({}),
+    configureContext: vi.fn(),
+    addInitScript: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(null),
+    boundingBox: vi.fn().mockResolvedValue({ x: 10, y: 10, width: 100, height: 30 }),
+    scrollIntoView: vi.fn().mockResolvedValue(undefined),
+    mouseMove: vi.fn().mockResolvedValue(undefined),
+    type: vi.fn().mockResolvedValue(undefined),
+    reload: vi.fn().mockResolvedValue(undefined),
+    storageState: vi.fn().mockResolvedValue({ cookies: [], origins: [] }),
   };
 }
 

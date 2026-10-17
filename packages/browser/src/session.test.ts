@@ -28,7 +28,13 @@ describe('resolveSelector', () => {
   it('converts role selector to the Playwright role engine', () => {
     expect(resolveSelector({ role: 'button' })).toBe('role=button');
     expect(resolveSelector({ role: 'link', name: 'Click me' })).toBe(
-      'role=link[name="Click me" i]',
+      'role=link[name=/Click me/i]',
+    );
+  });
+
+  it('escapes regex metacharacters in role names', () => {
+    expect(resolveSelector({ role: 'button', name: 'Block + Report (2)' })).toBe(
+      'role=button[name=/Block \\+ Report \\(2\\)/i]',
     );
   });
 
