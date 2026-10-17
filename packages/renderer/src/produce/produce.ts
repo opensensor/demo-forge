@@ -15,7 +15,11 @@ import { CaptionGenerator } from '../audio/captions/generator.js';
 import { CapturePipeline } from '../capture/capture-pipeline.js';
 import type { NarrationEvent } from '../replay/types.js';
 
-export type DeliverableFormat = 'mp4' | 'gif' | 'webm';
+/** `discord` = an MP4 sized for Discord's 10 MB upload limit, captions burned in. */
+export type DeliverableFormat = 'mp4' | 'gif' | 'webm' | 'discord';
+
+/** Target size for the `discord` deliverable (Discord's free limit is 10 MiB). */
+const DISCORD_TARGET_BYTES = 8.5 * 1024 * 1024;
 
 export interface ProduceOptions {
   /** Raw recording from the replay (Playwright WebM). */
@@ -61,6 +65,58 @@ const CAPTION_STYLE = [
 
 function escapeFilterValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,');
+}
+
+function probeDurationSeconds(ffprobe: string, file: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]);
+    let out = '';
+    proc.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
+    proc.on('error', reject);
+    proc.on('close', () => {
+      const seconds = parseFloat(out);
+      if (Number.isFinite(seconds) && seconds > 0) resolve(seconds);
+      else reject(new Error(`could not probe duration of ${file}`));
+    });
+  });
+}
+
+/**
+ * Two-pass H.264 (Main profile, faststart) sized to fit Discord's upload
+ * limit, so it plays inline on desktop and mobile. Burns captions unless the
+ * master already has them.
+ */
+async function encodeDiscord(
+  ffmpeg: string,
+  master: string,
+  outputPath: string,
+  srtPath: string | undefined,
+): Promise<void> {
+  const ffprobe = ffmpeg.replace(/ffmpeg$/, 'ffprobe');
+  const seconds = await probeDurationSeconds(ffprobe, master);
+  const audioKbps = 128;
+  const videoKbps = Math.max(250, Math.floor((DISCORD_TARGET_BYTES * 8) / seconds / 1000 - audioKbps));
+  const vf = srtPath
+    ? ['-vf', `subtitles=filename='${escapeFilterValue(srtPath)}':force_style='${CAPTION_STYLE}'`]
+    : [];
+  const passlog = `${outputPath}.passlog`;
+  const common = [
+    '-y', '-hide_banner', '-loglevel', 'error', '-i', master, ...vf,
+    '-c:v', 'libx264', '-preset', 'slow', '-b:v', `${videoKbps}k`,
+    '-maxrate', `${videoKbps * 2}k`, '-bufsize', `${videoKbps * 2}k`,
+    '-profile:v', 'main', '-level', '4.1', '-pix_fmt', 'yuv420p', '-passlogfile', passlog,
+  ];
+  try {
+    await runFfmpeg(ffmpeg, [...common, '-pass', '1', '-an', '-f', 'mp4', '/dev/null']);
+    await runFfmpeg(ffmpeg, [
+      ...common, '-pass', '2', '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-ar', '48000',
+      '-movflags', '+faststart', outputPath,
+    ]);
+  } finally {
+    for (const suffix of ['-0.log', '-0.log.mbtree']) {
+      fs.rmSync(`${passlog}${suffix}`, { force: true });
+    }
+  }
 }
 
 function runFfmpeg(ffmpeg: string, args: string[]): Promise<void> {
@@ -190,6 +246,17 @@ export async function produceDeliverables(options: ProduceOptions): Promise<Prod
     });
     if (webm.success) result.outputs.webm = webm.metadata.outputPath;
     else result.errors.push(`webm: ${webm.error}`);
+  }
+
+  if (formats.includes('discord')) {
+    const discordPath = `${base}-discord.mp4`;
+    log(`encoding ${path.basename(discordPath)} (≤ ${(DISCORD_TARGET_BYTES / 1024 / 1024).toFixed(1)} MiB)`);
+    try {
+      await encodeDiscord(ffmpeg, mp4Path, discordPath, options.burnCaptions ? undefined : result.captions?.srt);
+      result.outputs.discord = discordPath;
+    } catch (err) {
+      result.errors.push(`discord: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   return result;

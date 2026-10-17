@@ -21,6 +21,7 @@ import type { TtsBackend } from './types.js';
 import { PiperBackend } from './backends/piper.js';
 import { KokoroBackend } from './backends/kokoro.js';
 import { OpenAiBackend } from './backends/openai.js';
+import { ChatterboxBackend } from './backends/chatterbox.js';
 import { generateLicenseFile, verifyModelSource } from './license.js';
 
 // ─── Default speech rate (characters per second) ─────────────────────────────
@@ -43,7 +44,7 @@ export class TtsEngine {
     }
 
     const backend = config.backend ?? 'piper';
-    const validBackends: TtsBackendName[] = ['piper', 'kokoro', 'openai'];
+    const validBackends: TtsBackendName[] = ['piper', 'kokoro', 'chatterbox', 'openai'];
     if (!validBackends.includes(backend)) {
       throw new Error(`Unknown TTS backend: ${backend}. Must be one of: ${validBackends.join(', ')}`);
     }
@@ -158,6 +159,8 @@ export class TtsEngine {
           modelPath: this.config.kokoroModelPath,
           format: this.config.format,
         });
+      case 'chatterbox':
+        return new ChatterboxBackend();
       case 'openai':
         if (!this.config.openai) {
           throw new Error('OpenAI backend requires openai config (apiKey, baseUrl, model)');

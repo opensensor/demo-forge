@@ -192,6 +192,25 @@ describe('Renderer — step execution', () => {
     expect(result.steps[1].status).toBe('timing');
   });
 
+  it('never starts a narration line while a non-blocking one is still playing', async () => {
+    const script = createScript([
+      { goto: 'http://localhost:3000' },
+      { narrate: 'First line keeps talking.', wait: false },
+      { click: { css: '#next' } },
+      { narrate: 'Second line.' },
+    ]);
+    const narration = new Map([
+      [1, { text: 'First line keeps talking.', durationMs: 800 }],
+      [3, { text: 'Second line.', durationMs: 200 }],
+    ]);
+    const renderer = new Renderer(script, { narration }, mock as unknown as BrowserSession);
+    const result = await renderer.render();
+
+    expect(result.status).toBe('success');
+    const [first, second] = result.narration ?? [];
+    expect(second!.atMs).toBeGreaterThanOrEqual(first!.atMs + first!.durationMs);
+  });
+
   it('executes pause step', async () => {
     const script = createScript([
       { goto: 'http://localhost:3000' },

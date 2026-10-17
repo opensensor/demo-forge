@@ -16,6 +16,7 @@ import { isNarrateStep } from '@demoforge/core';
 
 import { TtsEngine } from '../audio/tts/engine.js';
 import type { TtsBackendName } from '../audio/tts/types.js';
+import { usableVoiceProfile } from '../audio/voices/profiles.js';
 
 export interface NarrationClip {
   text: string;
@@ -81,8 +82,13 @@ export async function prepareNarration(
     return clips;
   }
 
-  const backend = options.backend ?? 'kokoro';
   const voice = options.voice ?? script.voice ?? '';
+  // A voice that names an enrolled profile is a cloned voice: use Chatterbox.
+  const profile = voice ? usableVoiceProfile(voice) : null;
+  const backend: TtsBackendName = profile ? 'chatterbox' : options.backend ?? 'kokoro';
+  if (profile) {
+    options.onLog?.(`narrating in cloned voice "${profile.name}" (${profile.speaker})`);
+  }
   const engine = new TtsEngine({
     enabled: true,
     backend,
@@ -103,7 +109,7 @@ export async function prepareNarration(
 
   for (const { step, index } of lines) {
     const key = createHash('sha1')
-      .update(`${backend}\0${voice}\0${options.speed ?? 1}\0${step.narrate}`)
+      .update(`${backend}\0${voice}\0${profile?.sha256 ?? ''}\0${options.speed ?? 1}\0${step.narrate}`)
       .digest('hex')
       .slice(0, 16);
     const audioPath = path.join(options.audioDir, `${key}.wav`);

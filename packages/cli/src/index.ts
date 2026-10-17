@@ -11,3 +11,4 @@ export { createSiteCommand } from "./commands/site.js";
 export { createDoctorCommand, type CheckResult } from "./commands/doctor.js";
 export { createHealCommand } from "./commands/heal.js";
 export { createStudioCommand } from "./commands/studio.js";
+export { createVoiceCommand } from "./commands/voice.js";

@@ -44,9 +44,17 @@ const MODEL_LICENSES: Record<TtsBackendName, ModelLicenseInfo[]> = {
     {
       model: 'af_heart',
       backend: 'kokoro',
-      license: 'MPL-2.0',
+      license: 'Apache-2.0',
       sourceUrl: 'https://huggingface.co/hexgrad/Kokoro-82M',
       modelPath: path.join('vendor', 'kokoro', 'models', 'af_heart.onnx'),
+    },
+  ],
+  chatterbox: [
+    {
+      model: 'chatterbox',
+      backend: 'chatterbox',
+      license: 'MIT',
+      sourceUrl: 'https://huggingface.co/ResembleAI/chatterbox',
     },
   ],
   openai: [

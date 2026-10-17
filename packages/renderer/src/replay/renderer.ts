@@ -108,6 +108,8 @@ export class Renderer {
   private _videoStart = 0;
   private _contentStartMs: number | undefined;
   private _narration: NarrationEvent[] = [];
+  /** When the most recent narration line (plus gap) finishes playing. */
+  private _narrationBusyUntil = 0;
   private _screenshots: string[] = [];
   private _cspDetected = false;
   private _inSetup = false;
@@ -144,6 +146,7 @@ export class Renderer {
   async render(): Promise<RenderResult> {
     this._results = [];
     this._narration = [];
+    this._narrationBusyUntil = 0;
     this._screenshots = [];
     this._contentStartMs = undefined;
     this._startTime = Date.now();
@@ -311,8 +314,11 @@ export class Renderer {
       this._log(`step ${index}: ${stepType}`);
     }
 
-    // Narration may legitimately hold longer than a normal step.
-    const narrationHold = isNarrateStep(step) ? this._narrationDuration(step, index) : 0;
+    // Narration may legitimately hold longer than a normal step, including
+    // waiting for a previous non-blocking line to finish.
+    const narrationHold = isNarrateStep(step)
+      ? this._narrationDuration(step, index) + Math.max(0, this._narrationBusyUntil - Date.now())
+      : 0;
     const timeoutMs = this._config.stepTimeout + narrationHold;
 
     return new Promise<StepResult>((resolve) => {
@@ -592,6 +598,13 @@ export class Renderer {
     }
     const clip = this._config.narration?.get(index);
     const durationMs = this._narrationDuration(step, index);
+    // Never talk over a previous line that is still playing (`wait: false`
+    // lets actions continue under narration, not a second voice).
+    const stillSpeaking = this._narrationBusyUntil - Date.now();
+    if (stillSpeaking > 0) {
+      await sleep(stillSpeaking);
+    }
+    this._narrationBusyUntil = Date.now() + durationMs + NARRATION_GAP_MS;
     this._narration.push({
       stepIndex: index,
       text: step.narrate,

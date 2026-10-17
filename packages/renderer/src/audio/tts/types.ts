@@ -40,7 +40,7 @@ export type AudioFormat = 'wav' | 'mp3' | 'opus';
 
 // ─── TTS configuration ────────────────────────────────────────────────────────
 
-export type TtsBackendName = 'piper' | 'kokoro' | 'openai';
+export type TtsBackendName = 'piper' | 'kokoro' | 'chatterbox' | 'openai';
 
 export type AudioOutputMode = 'embedded' | 'sidecar';
 

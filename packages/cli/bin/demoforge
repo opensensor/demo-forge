@@ -236,6 +236,14 @@ try {
   logger.error("Failed to load studio command: " + (err instanceof Error ? err.message : String(err)));
 }
 
+// voice
+try {
+  const { createVoiceCommand } = await import(resolveDist("commands/voice.js"));
+  program.addCommand(createVoiceCommand(logger));
+} catch (err) {
+  logger.error("Failed to load voice command: " + (err instanceof Error ? err.message : String(err)));
+}
+
 // ---------------------------------------------------------------------------
 // Unknown command handling with suggestions
 // ---------------------------------------------------------------------------

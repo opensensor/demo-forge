@@ -56,6 +56,7 @@ export {
   PiperBackend,
   KokoroBackend,
   OpenAiBackend,
+  ChatterboxBackend,
   generateLicenseFile,
   verifyModelSource,
 } from './audio/tts/index.js';
@@ -168,3 +169,21 @@ export {
   type RenderDemoOptions,
   type RenderDemoResult,
 } from './produce/render-demo.js';
+
+// ─── Voice profiles (opt-in cloned narration voices) ──────────────────────────
+
+export {
+  voicesDir,
+  voiceDir,
+  isValidVoiceName,
+  loadVoiceProfile,
+  saveVoiceProfile,
+  listVoiceProfiles,
+  deleteVoiceProfile,
+  usableVoiceProfile,
+  sha256File,
+  findVoiceToolchain,
+  type VoiceProfile,
+  type VoiceConsent,
+  type VoiceToolchain,
+} from './audio/voices/profiles.js';

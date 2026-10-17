@@ -12,6 +12,7 @@ export { TtsEngine } from './engine.js';
 export { PiperBackend } from './backends/piper.js';
 export { KokoroBackend } from './backends/kokoro.js';
 export { OpenAiBackend } from './backends/openai.js';
+export { ChatterboxBackend, type ChatterboxOptions } from './backends/chatterbox.js';
 export { generateLicenseFile, verifyModelSource } from './license.js';
 
 export type {
