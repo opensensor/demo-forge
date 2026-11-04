@@ -26,6 +26,8 @@ interface RenderOptions {
   burnCaptions?: boolean;
   video: boolean;
   width?: string;
+  stepTimeout?: string;
+  globalTimeout?: string;
 }
 
 /** Resolve CLI targets to script file paths. */
@@ -73,6 +75,8 @@ export function createRenderCommand(
     .option("--burn-captions", "Burn captions into the video (default for captions mode)")
     .option("--no-video", "Skip recording; only run steps and capture screenshots")
     .option("--width <px>", "Output video width (default: viewport width)")
+    .option("--step-timeout <ms>", "Per-step timeout in milliseconds (default: 20000)")
+    .option("--global-timeout <ms>", "Timeout for the whole render in milliseconds (default: 900000)")
     .action(async (targets: string[], options: RenderOptions) => {
       let files: string[];
       try {
@@ -116,6 +120,8 @@ export function createRenderCommand(
           formats,
           burnCaptions: options.burnCaptions,
           videoWidth: options.width ? parseInt(options.width, 10) : undefined,
+          stepTimeout: options.stepTimeout ? parseInt(options.stepTimeout, 10) : undefined,
+          globalTimeout: options.globalTimeout ? parseInt(options.globalTimeout, 10) : undefined,
           onLog: (message) => logger.debug(`[${script.demo}] ${message}`),
         });
 

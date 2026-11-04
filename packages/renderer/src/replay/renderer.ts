@@ -72,6 +72,7 @@ type ResolvedConfig = Required<
 > &
   Pick<RenderConfig, 'narration' | 'setupBrowserFactory' | 'onLog'>;
 
+const WAIT_FOR_TIMEOUT_MARGIN_MS = 1000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -319,7 +320,12 @@ export class Renderer {
     const narrationHold = isNarrateStep(step)
       ? this._narrationDuration(step, index) + Math.max(0, this._narrationBusyUntil - Date.now())
       : 0;
-    const timeoutMs = this._config.stepTimeout + narrationHold;
+    // A wait_for that names its own timeout gets that long, plus a moment for the browser call to report it
+    const explicitWait = isWaitForStep(step) ? step.wait_for.timeout : undefined;
+    const stepBudget = explicitWait === undefined
+      ? this._config.stepTimeout
+      : Math.max(this._config.stepTimeout, explicitWait + WAIT_FOR_TIMEOUT_MARGIN_MS);
+    const timeoutMs = stepBudget + narrationHold;
 
     return new Promise<StepResult>((resolve) => {
       const timeout = setTimeout(() => {

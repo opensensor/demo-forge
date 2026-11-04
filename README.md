@@ -304,6 +304,8 @@ npx demoforge render login -o ./output --skip-seed
 |---|---|
 | `-o, --output <dir>` | Output directory for rendered assets |
 | `--skip-seed` | Skip the seed-data hook before rendering |
+| `--step-timeout <ms>` | Per-step timeout in milliseconds. A `wait_for` with a longer `timeout` of its own gets that long (default: 20000) |
+| `--global-timeout <ms>` | Timeout for the whole render in milliseconds (default: 900000) |
 | `--strict` | Fail if no seed hook is configured and app is in empty state |
 
 #### `demoforge site`

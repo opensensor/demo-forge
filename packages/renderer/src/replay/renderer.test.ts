@@ -153,6 +153,24 @@ describe('Renderer — step execution', () => {
     expect(mock.press).toHaveBeenCalledWith('Enter');
   });
 
+  it('lets a wait_for run past the step timeout when it names a longer timeout', async () => {
+    mock.wait_for.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    const script = createScript([{ wait_for: { text: 'Dashboard', timeout: 5000 } }]);
+    const renderer = new Renderer(script, { stepTimeout: 20 }, mock as unknown as BrowserSession);
+    const result = await renderer.render();
+
+    expect(result.status).toBe('success');
+  });
+
+  it('still applies the step timeout to a wait_for without its own timeout', async () => {
+    mock.wait_for.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const script = createScript([{ wait_for: { text: 'Dashboard' } }]);
+    const renderer = new Renderer(script, { stepTimeout: 20 }, mock as unknown as BrowserSession);
+    const result = await renderer.render();
+
+    expect(result.status).toBe('timeout');
+  });
+
   it('executes wait_for text step', async () => {
     const script = createScript([
       { goto: 'http://localhost:3000' },
